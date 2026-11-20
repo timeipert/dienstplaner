@@ -1,5 +1,6 @@
 // Tests for month settings, the vacation-edge rule, lower bounds and the time-limited search.
-// Scenario: preset "team3" (three persons, see tests/scheduler.test.mjs), month 2026-12.
+// Scenario: tests/fixture.mjs (three persons), month 2026-12.
+import { testState } from './fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newState, editMonthSettings } from '../src/js/model.js';
@@ -13,8 +14,8 @@ const pid = (s, name) => s.people.find((p) => p.name === name).id;
 const list = (r) => Object.entries(r.duties).map(([k, v]) => ({ pid: k.split('|')[0], date: k.split('|')[1], from: minutesOf(v.from), to: minutesOf(v.to) }));
 
 test('month setting "no morning duties for all": no duty starts before 12:00 except for appointments', () => {
-  const s = newState('team3');
-  s.config.appointments.push({ id: 'hpg', title: 'Hilfeplangespräch', repeat: 'once', date: '2026-12-09', from: '10:00', to: '11:30', participants: [pid(s, 'N')] });
+  const s = testState();
+  s.config.appointments.push({ id: 'hpg', title: 'Case conference', repeat: 'once', date: '2026-12-09', from: '10:00', to: '11:30', participants: [pid(s, 'N')] });
   editMonthSettings(s, KEY).noMorning = true;
   const r = generate(s, KEY, { budgetMs: 1500, seed: 3 });
   const early = list(r).filter((d) => d.from < 12 * 60);
@@ -26,7 +27,7 @@ test('month setting "no morning duties for all": no duty starts before 12:00 exc
 });
 
 test('month setting per person: other weekly hours and paused weekly wishes', () => {
-  const s = newState('team3');
+  const s = testState();
   const n = s.people.find((p) => p.name === 'N');
   n.weeklyWishes = [{ id: 'w', label: 'Vormittag', days: 1, from: '10:00', to: '11:00' }];
   editMonthSettings(s, KEY).people[n.id] = { noMorning: true, noWishes: true, hours: 20 };
@@ -39,7 +40,7 @@ test('month setting per person: other weekly hours and paused weekly wishes', ()
 });
 
 test('vacation edge: no duty on the day before and after an absence when avoidable', () => {
-  const s = newState('team3');
+  const s = testState();
   const j1 = s.people.find((p) => p.name === 'J1');
   j1.absences = [{ from: '2026-12-14', to: '2026-12-18' }]; // Mon–Fri; Sunday 13 and Saturday 19 are the edges
   const r = generate(s, KEY, { budgetMs: 2000, seed: 5 });
@@ -50,7 +51,7 @@ test('vacation edge: no duty on the day before and after an absence when avoidab
 });
 
 test('lower bounds: 25 h with 5–6-hour duties cannot avoid duties on consecutive days', () => {
-  const s = newState('team3');
+  const s = testState();
   const P = buildProblem(s, KEY, { keep: 'locked' });
   const b = structuralBounds(P);
   const n = P.people.findIndex((p) => p.name === 'N');
@@ -66,7 +67,7 @@ test('search: stops early when every rule is met, otherwise at the time limit, a
   Object.assign(s.config, { coverage: [], weeklyCoverage: [], maxEmptyWeekends: 99 });
   const one = searchPlan(buildProblem(s, KEY, { keep: 'locked' }), { timeoutMs: 3000, runMs: 200 });
   assert.equal(one.reason, 'met');
-  const t = newState('team3');
+  const t = testState();
   const res = searchPlan(buildProblem(t, KEY, { keep: 'locked' }), { timeoutMs: 2500, runMs: 800, seed: 2 });
   assert.ok(['met', 'timeout'].includes(res.reason));
   assert.ok(res.runs >= 1 && res.duties && Number.isFinite(res.cost));
@@ -74,7 +75,7 @@ test('search: stops early when every rule is met, otherwise at the time limit, a
 });
 
 test('every soft rule of the report has a weight', () => {
-  const s = newState('team3');
+  const s = testState();
   const r = generate(s, KEY, { budgetMs: 800, seed: 1 });
   const rep = buildReport(r.problem, r.choice);
   for (const c of rep.constraints.filter((x) => x.group !== 'hart')) assert.ok(weightFor(c.id), c.id);

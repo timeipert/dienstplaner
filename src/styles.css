@@ -70,7 +70,7 @@ input[type=checkbox] { accent-color: var(--ink); width: 1rem; height: 1rem; vert
 .summary .sep::before { content: "·"; margin: 0 .7rem; }
 .cols { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 3rem; align-items: start; }
 .card { margin-bottom: 1rem; }
-.setup, .data { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 1rem 3rem; align-items: start; }
+.setup, .data { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(430px, 100%), 1fr)); gap: 1rem 3rem; align-items: start; }
 .setup .wide, .data .wide { grid-column: 1 / -1; }
 .empty-state { border: 1px dashed var(--line); padding: 2.5rem; text-align: center; color: var(--mid); }
 .welcome { max-width: 760px; padding-top: 3rem; }
@@ -361,3 +361,15 @@ ul.suggest .btn.quiet { text-align: left; padding-left: 0; color: var(--ink); }
 .delta { font-size: .75rem; color: var(--mid); white-space: nowrap; }
 .delta.better { color: var(--ink); font-weight: 600; }
 .delta.worse { color: var(--soft); }
+
+/* narrow screens (phones): rule text above its importance buttons, group summary below the title */
+@media (max-width: 640px) {
+  .rule { flex-direction: column; gap: .3rem; }
+  .levels { flex-wrap: wrap; }
+  details.group summary { flex-wrap: wrap; }
+  details.group .gtitle { min-width: 0; }
+  details.group .gsum { flex-basis: 100%; }
+  nav .tab.gap { margin-left: 0; padding-left: 0; border-left: 0; }
+}
+/* grid and flex children may shrink below their content width, so wide tables scroll inside .tablewrap */
+.cols > *, .view > *, details.group .gbody { min-width: 0; }

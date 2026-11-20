@@ -1,4 +1,5 @@
 // Tests for the plan evaluation (constraint report, fairness figures, pairs).
+import { testState } from './fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newState, getPlan, dutyKey } from '../src/js/model.js';
@@ -7,7 +8,7 @@ import { buildReport } from '../src/js/report.js';
 
 const KEY = '2026-12';
 function planned() {
-  const s = newState('team3');
+  const s = testState();
   const r = generate(s, KEY, { budgetMs: 2000 });
   getPlan(s, KEY).duties = r.duties;
   const P = buildProblem(s, KEY, { keep: 'all' });
@@ -61,7 +62,7 @@ test('report: a violated hard rule is reported as "bad"', () => {
 });
 
 test('report: an empty plan has no hard violation and uncovered coverage', () => {
-  const s = newState('team3');
+  const s = testState();
   const P = buildProblem(s, KEY, { keep: 'all' });
   const rep = buildReport(P, storedChoice(P));
   assert.equal(find(rep, 'coverage').met, 0);

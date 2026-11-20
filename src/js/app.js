@@ -28,8 +28,10 @@ function welcome() {
     h('h1', {}, 'Dienstplaner'),
     h('p', { class: 'lead' }, 'Monatlicher Dienstplan mit freien Dienstzeiten: Eine Person trägt Wünsche („kann nicht“), Termine und Regeln ein und erzeugt daraus einen Plan, der Besetzung, Wochenstunden und Ausgleich berücksichtigt. Alles läuft in diesem Browser. Es werden keine Daten übertragen.'),
     h('h2', {}, 'Womit beginnen?'),
-    h('div', { class: 'row wrap' }, Object.entries(PRESETS).map(([id, p]) => h('button', { class: 'btn solid', onClick: () => { const b = p.build(); s.config = b.config; s.people = b.people; s.meta.onboarded = true; s.ui.tab = b.people.length ? 'plan' : 'setup'; save(); store.render(); } }, p.label))),
-    h('p', { class: 'hint' }, 'Alles lässt sich danach ändern: benötigte Besetzung, Dienstzeiten je Wochentag, Wochenenddienste, Termine, Personen mit Wochenstunden und Dienstlängen, Gewichtung der Regeln.'),
+    h('div', { class: 'row wrap' },
+      h('button', { class: 'btn solid', onClick: () => { const b = PRESETS.blank.build(); s.config = b.config; s.people = b.people; s.meta.onboarded = true; s.ui.tab = 'people'; save(); store.render(); } }, 'Mit Grundeinstellungen beginnen'),
+      h('button', { class: 'btn', onClick: () => { s.meta.onboarded = true; s.ui.tab = 'setup'; s.ui.setupOpen = { ...(s.ui.setupOpen || {}), data: true }; save(); store.render(); } }, 'Sicherung einspielen')),
+    h('p', { class: 'hint' }, 'Grundeinstellungen: Dienste täglich 10–21 Uhr, Besetzung Mo–Fr 14–20 Uhr mit mindestens einer Person, ein Wochenenddienst von 3 Std. pro Person und Monat. Als Nächstes die Personen anlegen. Alles lässt sich unter „Regeln“ und „Einstellungen“ ändern.'),
     h('p', { class: 'hint' }, 'Ablauf je Monat: 1. Wünsche und Abwesenheiten eintragen  2. Einzeltermine eintragen  3. Plan erstellen und von Hand nachbessern  4. Bis zum Stichtag drucken oder als Kalenderdatei verschicken.'));
 }
 

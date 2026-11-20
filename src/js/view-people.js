@@ -36,7 +36,7 @@ export function renderPeopleView() {
       h('thead', {}, h('tr', {}, ['Name', 'Std. / Woche', 'Dienstlänge (Std.)', 'Wunschlänge', 'Bevorzugte Tage', 'Folgetage', 'Notiz', ''].map((x) => h('th', {}, x)))),
       h('tbody', {}, s.people.map(row))))
       : h('div', { class: 'empty-state' }, h('p', {}, 'Noch keine Personen angelegt.')),
-    h('p', { class: 'hint' }, 'Std. / Woche: vertragliche Wochenstunden; Wochenenddienste zählen mit. Dienstlänge: kürzester und längster Dienst unter der Woche (Termine dürfen ihn verlängern). Bevorzugte Tage sind eine leichte Regel. „Folgetage vermeiden“: Dienste möglichst nicht an zwei Tagen hintereinander. Regelmäßige Einschränkungen (z. B. mittwochs erst ab 16:30) stehen unter „Wünsche“ im Wochenmuster.'));
+    h('p', { class: 'hint' }, 'Std. / Woche: vertragliche Wochenstunden; Wochenenddienste zählen mit. Dienstlänge: kürzester und längster Dienst unter der Woche (Termine dürfen ihn verlängern). Bevorzugte Tage sind eine leichte Regel. „Folgetage vermeiden“: Dienste möglichst nicht an zwei Tagen hintereinander. Regelmäßige Einschränkungen (z. B. montags erst ab 15:00) stehen unter „Wünsche“ im Wochenmuster.'));
 }
 
 function removePerson(id) {

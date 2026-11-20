@@ -1,4 +1,4 @@
-// Data view: backup, restore, presets, erase, and the privacy statement.
+// Data view: backup, restore, reset of the rules to the defaults, erase, and the privacy statement.
 import { h, downloadFile, toast, confirmModal } from './ui-core.js';
 import { store, save, saveNow, storageBytes, replaceState } from './store.js';
 import { normalizeState } from './model.js';
@@ -40,16 +40,14 @@ export function renderDataView() {
         h('button', { class: 'btn solid', onClick: () => downloadFile(`dienstplaner-sicherung-${stamp}.json`, JSON.stringify(s, null, 1), 'application/json') }, 'Sicherung herunterladen'),
         h('button', { class: 'btn', onClick: () => fileInput.click() }, 'Sicherung einspielen'), fileInput)),
     h('div', { class: 'card' },
-      h('h2', {}, 'Vorlagen'),
-      h('p', { class: 'hint' }, 'Eine Vorlage ersetzt Regeln, Einstellungen, Termine und (falls die Vorlage Personen enthält) die Personen. Pläne und Wünsche bleiben.'),
-      h('div', { class: 'row wrap' }, Object.entries(PRESETS).map(([id, p]) => h('button', { class: 'btn', onClick: () => confirmModal('Vorlage anwenden', `„${p.label}“ ersetzt Regeln, Einstellungen und Termine${p.build().people.length ? ' sowie die Personen' : ''}.`, 'Anwenden', () => {
-        const built = p.build();
-        s.config = built.config;
-        if (built.people.length) s.people = built.people;
+      h('h2', {}, 'Regeln zurücksetzen'),
+      h('p', { class: 'hint' }, 'Setzt Regeln, Gewichte, Einstellungen und Termine auf die Grundeinstellungen zurück. Personen, Wünsche und Pläne bleiben.'),
+      h('button', { class: 'btn', onClick: () => confirmModal('Regeln zurücksetzen', 'Regeln, Gewichte, Einstellungen und Termine werden auf die Grundeinstellungen zurückgesetzt.', 'Zurücksetzen', () => {
+        s.config = PRESETS.blank.build().config;
         s.meta.onboarded = true;
         save();
         store.render();
-      }) }, p.label)))),
+      }) }, 'Auf Grundeinstellungen zurücksetzen')),
     h('div', { class: 'card' },
       h('h2', {}, 'Alles löschen'),
       h('p', { class: 'hint' }, 'Entfernt alle Daten aus diesem Browser. Vorher eine Sicherung herunterladen.'),

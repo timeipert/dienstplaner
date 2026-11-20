@@ -7,3 +7,4 @@ node_modules/
 dienstplaner-sicherung-*.json
 *.ics
 *.csv
+tools/exact/*.json

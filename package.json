@@ -1,6 +1,6 @@
 {
   "name": "dienstplaner",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Local-only monthly duty planner with free duty times. No backend, data stays in the browser.",
   "private": true,
   "type": "module",

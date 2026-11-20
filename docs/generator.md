@@ -58,8 +58,8 @@ that appointments still widen the window). The stored person is not changed.
    takes q's day d2, usually in the same or next week, so weekly hours stay similar); two persons
    on the same day exchange their times. A move that adds hard-rule violations is rejected. The best plan seen is kept.
 3. Runs in steps (`step(ms)`) so the page stays responsive.
-4. Time-limited search (`search.js`, `createSearch`): optimizer runs of 3 s (6 s for limits of
-   1 min and more); every second run restarts from the best plan so far at temperature 15, the
+4. Time-limited search (`search.js`, `createSearch`; default limit in the app 60 s): optimizer
+   runs of 3 s (6 s for limits of 1 min and more); every second run restarts from the best plan so far at temperature 15, the
    others start fresh with a new seed. After each run the plan is evaluated (`buildReport`); the
    search stops when no rule has status warn or bad, when the time limit is reached, or when the
    user stops it. The plan with the lowest weighted cost is kept, so the weights decide which rule
@@ -72,10 +72,34 @@ better plan in at least 6 person-days; plans at most 10 % above the best are ret
 
 Backup of the first team, December 2026, 3 s per run: weighted cost about 1500, of which about
 960 are duties on consecutive days; the lower bounds (below) show about 20 of these 24 pairs are
-unavoidable. A 20 s search reaches about 1420–1450. Tuning the temperature (15 / 60 / 150) and
-the additional moves changed the mean by less than 2 %, so the search is close to the best
-reachable plan for these weights; differences between good plans are mostly trade-offs, which
-the variants make visible.
+unavoidable. Tuning the temperature (15 / 60 / 150) and the additional moves changed the mean by
+less than 2 %. How far this is from the best possible plan was then measured with an exact
+solver (next section).
+
+## Distance to the optimum (2026-11-20)
+
+Question: can another method (exact optimization, other heuristics) find clearly better plans?
+Method: the month is written as an integer program with the same decisions, hard rules and
+cost terms as `makeEval` (tool: `tools/exact/`, OR-Tools CP-SAT; `export.mjs` writes the
+problem and the app's own plans, `model.py` solves it). The model is first checked against the
+app: for three app plans it gives the same cost to three decimals. CP-SAT then returns the best
+plan it finds and a proven lower bound (no plan can cost less).
+
+Result (backup of the first team, December 2026, 8 threads, 15 min):
+
+| Method | Weighted cost | Above the optimum |
+| --- | --- | --- |
+| Optimum (proven range) | 1381.7 – 1406.8 | – |
+| App, one run (3 s) | about 1540 – 1560 | 10 – 13 % |
+| App, search 20 s | 1436 | 2 – 4 % |
+| App, search 60 s (mean of 9 runs, range 1407 – 1445) | 1423 | 0 – 5 %, mean 1 – 3 % |
+
+The best exact plan differs from the app's 60 s plan in 26 person-days but only by 15 points
+(one consecutive-day pair less, a little less idle time outside the required coverage, Fridays
+slightly less balanced). Run length inside the 60 s search (3, 6 or 10 s) made no measurable
+difference. Decision (2026-11-20, product owner): the default computing time is 60 s; other
+methods are not worth their complexity for this problem size. To repeat the measurement for
+another month or other rules, follow the usage notes at the top of `tools/exact/model.py`.
 
 ## Lower bounds (report.js `structuralBounds`)
 
@@ -91,13 +115,14 @@ has at least 12 duties on consecutive days; J1 and J2 at least 3–4 each.
 
 ## Measured (2026-11-20)
 
-Preset "Nachmittagsdienst, 3 Personen", December 2026, budget 3 s: coverage Mon–Fri 14–20 without
+Test scenario `tests/fixture.mjs` (three persons), December 2026, budget 3 s: coverage Mon–Fri 14–20 without
 gap, every Tuesday all three in the meeting, one 3-hour weekend duty each, at most one empty
 weekend, Fridays 3/3/3, shared hours 22/22/22, monthly hours within a few hours of the target.
 
 ## Limits
 
-- No proof of optimality; on tight months a longer time limit helps.
+- No proof of optimality inside the app; `tools/exact/` measures the distance for a given month
+  (about 1–3 % at 60 s on the first team's December 2026).
 - The lower bounds treat each rule on its own. Rules can also conflict with each other (for
   example fixed 5-hour duties, one weekend duty and the weekly hours); such conflicts show up as
   rules that stay unmet after the full time limit, and the weights decide between them.

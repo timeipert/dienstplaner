@@ -1,4 +1,5 @@
 // Tests for the Excel export (calendar layout) and the built-in ZIP writer.
+import { testState } from './fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inflateRawSync } from 'node:zlib';
@@ -31,13 +32,13 @@ test('zip writer: entries can be read back', () => {
 });
 
 test('Excel export: calendar layout with weekday header, week blocks, duties and weekly hours', () => {
-  const s = newState('team3');
+  const s = testState();
   const r = generate(s, '2026-12', { budgetMs: 500 });
   getPlan(s, '2026-12').duties = r.duties;
   const files = unzip(planToXlsx(s, buildProblem(s, '2026-12', { keep: 'all' })));
   for (const f of ['[Content_Types].xml', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml', 'xl/styles.xml']) assert.ok(files[f], f);
   const sheet = files['xl/worksheets/sheet1.xml'];
   for (const t of ['Mo', 'So', 'KW 49', 'KW 53', '1. Dezember', 'J1', 'N', 'Std. Woche']) assert.ok(sheet.includes(`>${t}<`), t);
-  assert.match(sheet, />14–\d\d(:30)? T</, 'Tuesday duty with appointment mark');
+  assert.match(sheet, />14–\d\d(:30)? W</, 'Tuesday duty with appointment mark');
   assert.match(sheet, />\d+(,5)? \/ \d+(,5)?</, 'worked / target hours');
 });

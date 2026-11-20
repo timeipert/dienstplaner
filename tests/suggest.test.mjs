@@ -1,4 +1,5 @@
 // Tests for refining by hand (suggestions) and for plan variants from the search.
+import { testState } from './fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newState, getPlan, dutyKey } from '../src/js/model.js';
@@ -8,7 +9,7 @@ import { searchPlan } from '../src/js/search.js';
 
 const KEY = '2026-12';
 function planned() {
-  const s = newState('team3');
+  const s = testState();
   getPlan(s, KEY).duties = generate(s, KEY, { budgetMs: 800, seed: 4 }).duties;
   return s;
 }
@@ -41,7 +42,7 @@ test('suggestions never move a duty that contains an appointment', () => {
 });
 
 test('search returns variants that differ from the best plan and are of similar quality', () => {
-  const s = newState('team3');
+  const s = testState();
   const r = searchPlan(buildProblem(s, KEY, { keep: 'locked' }), { timeoutMs: 4000, runMs: 700, seed: 9 });
   if (r.reason === 'met') return; // nothing to compare when the first plan already meets every rule
   for (const v of r.variants) {

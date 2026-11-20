@@ -9,9 +9,10 @@ contract hours of every person and spreads special days fairly.
 - **Where it runs:** GitHub Pages (static file, no backend). All data stays in the browser of the
   person who plans. Separate project from the KULT shift planner (`../shift-planner`, Firebase),
   which it was forked from on 2026-11-20 and which stays unchanged.
-- **State:** 2026-11-20, version 0.2.0 ("hour model", schema 2). The core, all views and the
-  scenario tests are done. The repository has been initialized locally but not yet published.
-  The rules of the first team are entered as preset "Nachmittagsdienst, 3 Personen (Beispiel)".
+- **State:** 2026-11-20, version 0.6.0. Published at https://timeipert.github.io/dienstplaner/
+  (repository `timeipert/dienstplaner`). The app ships only neutral defaults ("Grundeinstellungen":
+  no persons, no appointments, no named examples). The three-person scenario of the first team is
+  kept as test data in `tests/fixture.mjs`.
 - **Language:** the user interface is German; code, comments and documentation are English.
 
 ## Start
@@ -78,7 +79,8 @@ following month by default.
    (morning = start before a time, default 12:00; appointments still take place), weekly wishes
    paused per person, other weekly hours per person.
 4. **Plan:** choose the computing time and press "Plan erstellen". "schnell" is one optimizer run
-   (about 3 s); "bis alle Regeln erfüllt, höchstens 20 s / 1 min / 3 min" repeats the search
+   (about 3 s); "bis alle Regeln erfüllt, höchstens 20 s / 1 min / 3 min" (default 1 min, measured
+   1–3 % above the best possible plan, see `docs/generator.md`) repeats the search
    (new random starts and restarts from the best plan) until every rule of the evaluation is met
    or the time is up; "Beenden und beste Lösung übernehmen" stops early. The best plan is the one
    with the lowest weighted cost.
@@ -145,7 +147,7 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | Once a week someone until 21:00 | Regeln → weekly coverage 20:00–21:00, 1 day |
 | J1, J2: 15 h/week as 3 × 5 h, ideally Mon/Wed/Fri, not on consecutive days | People: 15 h, length 5–5, preferred days, "avoid consecutive" |
 | N: 25 h/week, 6-hour duties preferred | People: 25 h, length 5–6, preferred 6 |
-| One person: Wednesday from 16:30, Friday until 18:00 | Wishes → weekly pattern (preset example on J2) |
+| One person: Wednesday from 16:30, Friday until 18:00 | Wishes → weekly pattern (J2 in `tests/fixture.mjs`) |
 | No morning duties on Wednesday | Einstellungen → duty times Wednesday from 12:00 |
 | Fridays balanced per month and across months | Regeln → balance weekdays Friday, 3 months of history |
 | Everybody one 3-hour weekend duty per month, preferably ending by 20:00; counts as working time | Regeln → weekend |
@@ -168,7 +170,7 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 
 | File | Purpose |
 | --- | --- |
-| `src/js/model.js` | State shape (schema 2), defaults, presets. |
+| `src/js/model.js` | State shape (schema 2), neutral defaults (`PRESETS.blank`). |
 | `src/js/scheduler.js` | Candidate duties, cost function, optimizer, analysis. Authoritative for rule semantics. |
 | `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
 | `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met, pool of variants. |
@@ -183,7 +185,8 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `tests/suggest.test.mjs` | Suggestions and variants. |
 | `tests/xlsx.test.mjs` | ZIP writer and Excel export. |
 | `tests/month-search.test.mjs` | Month settings, vacation edges, lower bounds, time-limited search. |
-| `docs/generator.md` | How the generator works. |
+| `docs/generator.md` | How the generator works, measured distance to the optimum. |
+| `tools/exact/` | Developer tool: exact model (OR-Tools CP-SAT) to measure the distance of the app's plans to the optimum. Not part of the app. |
 
 ## Open questions (state 2026-11-20)
 

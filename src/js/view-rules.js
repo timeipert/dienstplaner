@@ -76,7 +76,7 @@ export function renderRulesView() {
         rule('Dienste haben die Wunschlänge der Person (unter „Personen“).', 'length'),
         rule(h('span', {}, 'Ein Dienst dauert höchstens ', num(c, 'maxDayHours'), ' Stunden.'), 'hard'),
         rule(h('span', {}, h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: c.lateRule.on, onChange: (e) => { c.lateRule.on = e.target.checked; rerender(); } }), 'Nach einem Dienst, der nach '), time(c.lateRule, 'endAfter'), ' endet, beginnt der Dienst am nächsten Tag frühestens ', time(c.lateRule, 'nextFrom'), '.'), c.lateRule.on ? 'hard' : null),
-        rule(h('span', {}, 'Höchstens ', num(c, 'appointmentOnlyMax'), ' Dienst(e) pro Person und Monat nur für einen Termin (z. B. nur für die Teamsitzung kommen).'), 'apptOnly'),
+        rule(h('span', {}, 'Höchstens ', num(c, 'appointmentOnlyMax'), ' Dienst(e) pro Person und Monat, die nur aus einem Termin bestehen.'), 'apptOnly'),
       ],
     },
     {

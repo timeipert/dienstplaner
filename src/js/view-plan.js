@@ -7,18 +7,19 @@ import { buildProblem, analyze, storedChoice } from './scheduler.js';
 import { buildReport, weightFor } from './report.js';
 import { importanceControl } from './view-rules.js';
 import { createSearch, openConstraints } from './search.js';
-import { suggestFor, deltaText, applyChanges } from './suggest.js';
+import { suggestFor, deltaText, applyChanges, problemWithPlan, evaluate } from './suggest.js';
 import { planToCsv, planToIcs, planToXlsx } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
-const undoStack = []; // { key, json }
+const undoStack = []; // { key, json }: duties plus the variant list of the plan before a change
 // time: 0 = one run of about 3 s; otherwise the search repeats until all rules are met or the limit (ms) is reached
-const genOptions = { keepAll: false, time: 20000 };
+const genOptions = { keepAll: false, time: 60000 }; // 60 s: about 1–3 % above the proven optimum on a real month (docs/generator.md)
 let lastRun = null; // { key, runs, spent, reason, open } of the last generation in this browser tab
 const TIME_OPTIONS = [[0, 'schnell (ein Durchlauf)'], [20000, 'bis alle Regeln erfüllt, höchstens 20 s'], [60000, 'bis alle Regeln erfüllt, höchstens 1 min'], [180000, 'bis alle Regeln erfüllt, höchstens 3 min']];
 
 function pushUndo(key) {
-  undoStack.push({ key, json: JSON.stringify(store.state.plans[key]?.duties || {}) });
+  const plan = store.state.plans[key] || {};
+  undoStack.push({ key, json: JSON.stringify({ duties: plan.duties || {}, variants: plan.variants, variantCost: plan.variantCost, currentCost: plan.currentCost }) });
   if (undoStack.length > 40) undoStack.shift();
 }
 
@@ -260,7 +261,12 @@ function changeMonth(d) {
 function undo(key) {
   for (let i = undoStack.length - 1; i >= 0; i--) {
     if (undoStack[i].key === key) {
-      getPlan(store.state, key).duties = JSON.parse(undoStack[i].json);
+      const plan = getPlan(store.state, key);
+      const u = JSON.parse(undoStack[i].json);
+      plan.duties = u.duties;
+      plan.variants = u.variants;
+      plan.variantCost = u.variantCost;
+      plan.currentCost = u.currentCost;
       undoStack.splice(i, 1);
       save();
       store.render();
@@ -414,11 +420,11 @@ function renderMonthSettings(s, key) {
     if (bits.length) active.push(`${p.name}: ${bits.join(', ')}`);
   }
   return h('div', { class: 'noprint' }, section('month', `Nur für ${formatMonth(key)}`, active.length ? active.join(' · ') : 'keine Abweichungen (z. B. ein Monat ohne Vormittagsdienste)', () => [
-    h('p', { class: 'hint' }, 'Gilt nur in diesem Monat und ändert die Personen nicht dauerhaft. Termine (z. B. ein Hilfeplangespräch am Vormittag) finden trotzdem statt.'),
+    h('p', { class: 'hint' }, 'Gilt nur in diesem Monat und ändert die Personen nicht dauerhaft. Termine finden trotzdem statt, auch am Vormittag.'),
     h('div', { class: 'row wrap' },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: ms.noMorning, onChange: (e) => setGlobal('noMorning', e.target.checked) }), 'Keine Vormittagsdienste für alle'),
       h('label', {}, 'Vormittag = Beginn vor ', h('input', { type: 'time', step: '1800', value: ms.morningUntil, onChange: (e) => setGlobal('morningUntil', e.target.value || '12:00') }))),
-    people.length ? h('table', { class: 'grid' },
+    people.length ? h('div', { class: 'tablewrap' }, h('table', { class: 'grid' },
       h('thead', {}, h('tr', {}, ['Person', 'Keine Vormittagsdienste', 'Wöchentliche Wünsche aussetzen', 'Wochenstunden in diesem Monat'].map((x) => h('th', {}, x)))),
       h('tbody', {}, people.map((p) => {
         const pm = personMonthOf(ms, p.id);
@@ -428,7 +434,7 @@ function renderMonthSettings(s, key) {
           h('td', {}, (p.weeklyWishes || []).length ? h('input', { type: 'checkbox', 'aria-label': `${p.name}: wöchentliche Wünsche aussetzen`, checked: pm.noWishes, onChange: (e) => setPerson(p.id, 'noWishes', e.target.checked) }) : h('span', { class: 'hint' }, 'keine')),
           h('td', {}, h('input', { type: 'number', class: 'narrow', min: '0', max: '60', step: '0.5', placeholder: String(p.weeklyHours), value: pm.hours, 'aria-label': `${p.name}: Wochenstunden in diesem Monat`, onChange: (e) => setPerson(p.id, 'hours', e.target.value === '' ? '' : Number(e.target.value)) }),
             h('span', { class: 'hint' }, ` sonst ${fmtHours(p.weeklyHours)}`)));
-      }))) : null]));
+      })))) : null]));
 }
 
 /**
@@ -488,7 +494,9 @@ function renderVariants(s, P, key, plan, openRules) {
   const swap = (i) => {
     pushUndo(key);
     const v = vs[i];
-    const cur = { duties: plan.duties, cost: plan.currentCost ?? base, diff: v.diff, open: openRules.map((c) => c.label.replace(/ \(.*\)$/, '')) };
+    // cost of the shown plan as it is now (it may have been edited by hand since the generation)
+    const now = problemWithPlan(s, key);
+    const cur = { duties: plan.duties, cost: evaluate(now.P, now.choice).cost, diff: v.diff, open: openRules.map((c) => c.label.replace(/ \(.*\)$/, '')) };
     plan.duties = v.duties;
     plan.currentCost = v.cost;
     vs[i] = cur;

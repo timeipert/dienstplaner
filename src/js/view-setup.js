@@ -25,12 +25,12 @@ export function renderSetupView() {
   return h('section', { class: 'view setup' },
     group('windows', 'Dienstzeiten je Wochentag', winText, () => [
       h('p', { class: 'hint' }, 'In welchem Zeitraum Dienste liegen dürfen (z. B. mittwochs erst ab 12:00 = keine Vormittagsdienste). Termine dürfen außerhalb liegen.'),
-      h('table', { class: 'grid' }, h('tbody', {}, WEEK_ORDER.map((wd) => {
+      h('div', { class: 'tablewrap' }, h('table', { class: 'grid' }, h('tbody', {}, WEEK_ORDER.map((wd) => {
         const w = c.dayWindows[wd];
         return h('tr', {}, h('th', {}, WEEKDAYS_LONG[wd]),
           h('td', {}, h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: w.on, onChange: (e) => { w.on = e.target.checked; rerender(); } }), 'Dienste möglich')),
           h('td', { class: 'nowrap' }, w.on ? [time(w, 'from'), ' – ', time(w, 'to')] : null));
-      })))]),
+      }))))]),
     group('closed', 'Geschlossene Tage', c.closedDates.length ? c.closedDates.map((cd) => cd.date ? formatDay(cd.date) : '?').join(', ') : 'keine', () => [
       h('p', { class: 'hint' }, 'Feiertage, Schließtage: kein Dienst, keine Besetzung nötig, keine Sollstunden.'),
       c.closedDates.map((cd, i) => h('div', { class: 'row' },
@@ -45,5 +45,5 @@ export function renderSetupView() {
         labelled('Woche beginnt am', h('select', { onChange: (e) => { c.weekStart = Number(e.target.value); rerender(); } }, [1, 0].map((d) => h('option', { value: d, selected: c.weekStart === d }, WEEKDAYS_LONG[d])))),
         labelled('Anzeige von', time(c, 'viewFrom'), 'Dienste außerhalb werden trotzdem gezeigt.'),
         labelled('Anzeige bis', time(c, 'viewTo')))),
-    group('data', 'Daten und Datenschutz', 'Nur in diesem Browser gespeichert · Sicherung · Vorlagen · alles löschen', () => renderDataView()));
+    group('data', 'Daten und Datenschutz', 'Nur in diesem Browser gespeichert · Sicherung · Regeln zurücksetzen · alles löschen', () => renderDataView()));
 }

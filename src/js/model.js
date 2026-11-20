@@ -2,7 +2,7 @@
 //
 // Duties have free start and end times on a 30-minute grid. The plan must cover time windows
 // (for example Mon–Fri 14:00–20:00 with at least one person), each person should reach the
-// weekly hours of their contract, and appointments (team meeting, case conference) force
+// weekly hours of their contract, and appointments (weekly or once) force
 // the presence of persons at a given time.
 //
 // Everything the app stores lives in one JSON object ("state"):
@@ -93,30 +93,12 @@ export function blockString(from, to, ch = 'x', base = EMPTY_DAY) {
   return a.join('');
 }
 
+// Only neutral defaults: no persons, no appointments, no named examples (decision 2026-11-20,
+// product owner: the published app carries no team-specific data). The three-person scenario
+// used by the tests lives in tests/fixture.mjs.
 export const PRESETS = {
-  team3: {
-    label: 'Nachmittagsdienst, 3 Personen (Beispiel)',
-    build: () => {
-      const c = defaultConfig();
-      c.title = 'Dienstplan Team';
-      c.dayWindows[3].from = '12:00'; // Wednesday: no morning duties
-      c.weeklyCoverage = [{ id: uid('wc'), weekdays: [1, 2, 3, 4, 5], from: '20:00', to: '21:00', min: 1, days: 1 }];
-      c.appointments = [{ id: uid('ap'), title: 'Teamsitzung', repeat: 'weekly', weekday: 2, date: '', from: '14:00', to: '15:30', participants: 'all' }];
-      const people = [
-        newPerson('J1', { weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5, preferredWeekdays: [1, 3, 5], avoidConsecutive: true,
-          pattern: { 5: blockString(20 * 60, 21 * 60, '-') }, note: 'Beispiel: freitags eher nicht bis 21 Uhr' }),
-        newPerson('J2', {
-          weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5, preferredWeekdays: [1, 3, 5], avoidConsecutive: true,
-          pattern: { 3: blockString(0, 16 * 60 + 30), 5: blockString(18 * 60, 24 * 60) },
-          note: 'Beispiel: mittwochs erst ab 16:30, freitags nur bis 18:00',
-        }),
-        newPerson('N', { weeklyHours: 25, minLen: 5, maxLen: 6, prefLen: 6, avoidConsecutive: true }),
-      ];
-      return { config: c, people };
-    },
-  },
   blank: {
-    label: 'Leer',
+    label: 'Grundeinstellungen',
     build: () => ({ config: defaultConfig(), people: [] }),
   },
 };

@@ -3,6 +3,7 @@
 // (J1, J2 with 15 h/week and 5-hour duties, N with 25 h/week and 5–6-hour duties),
 // coverage Mon–Fri 14:00–20:00, once a week until 21:00, team meeting Tuesday 14:00–15:30,
 // one 3-hour weekend duty per person and month.
+import { testState } from './fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newState, normalizeState, getPlan, blockString, dutyKey } from '../src/js/model.js';
@@ -13,7 +14,7 @@ import { minutesOf, weekdayOf } from '../src/js/util.js';
 const KEY = '2026-12';
 
 function scenario() {
-  const s = newState('team3');
+  const s = testState();
   return s;
 }
 const duties = (r) => Object.entries(r.duties).map(([k, v]) => ({ pid: k.split('|')[0], date: k.split('|')[1], from: minutesOf(v.from), to: minutesOf(v.to) }));
@@ -127,7 +128,7 @@ test('analysis of a stored plan flags a missing team meeting', () => {
   getPlan(s, KEY).duties[dutyKey(pid(s, 'J1'), '2026-12-01')] = { from: '16:00', to: '21:00' };
   const P = buildProblem(s, KEY, { keep: 'all' });
   const a = analyze(P, storedChoice(P));
-  assert.ok(a.messages.some((m) => m.text.includes('J1') && m.text.includes('Teamsitzung')));
+  assert.ok(a.messages.some((m) => m.text.includes('J1') && m.text.includes('Weekly meeting')));
 });
 
 test('exports contain the duties', () => {
