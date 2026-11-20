@@ -1,0 +1,12 @@
+{
+  "name": "dienstplaner",
+  "version": "0.2.0",
+  "description": "Local-only monthly duty planner with free duty times. No backend, data stays in the browser.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node build.mjs",
+    "serve": "node serve.mjs"
+  }
+}

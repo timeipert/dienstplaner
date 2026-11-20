@@ -1,0 +1,9 @@
+# Build output (built by the Pages workflow; local copy via `npm run build`)
+dist/
+_site/
+node_modules/
+.DS_Store
+# Backups contain real names and must never be committed
+dienstplaner-sicherung-*.json
+*.ics
+*.csv
