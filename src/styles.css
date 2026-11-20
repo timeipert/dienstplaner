@@ -373,3 +373,8 @@ ul.suggest .btn.quiet { text-align: left; padding-left: 0; color: var(--ink); }
 }
 /* grid and flex children may shrink below their content width, so wide tables scroll inside .tablewrap */
 .cols > *, .view > *, details.group .gbody { min-width: 0; }
+/* dialog "Für Excel kopieren" */
+.gridopts { display: grid; gap: .5rem; margin: .6rem 0; }
+.gridopts strong { display: block; font-size: .8rem; margin-bottom: .1rem; }
+table.preview td { font-size: .78rem; padding: .2rem .45rem; white-space: nowrap; }
+textarea.copyarea { width: 100%; height: 6rem; font-family: var(--mono); font-size: .75rem; }

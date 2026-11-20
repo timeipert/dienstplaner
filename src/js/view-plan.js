@@ -8,7 +8,7 @@ import { buildReport, weightFor } from './report.js';
 import { importanceControl } from './view-rules.js';
 import { createSearch, openConstraints } from './search.js';
 import { suggestFor, deltaText, applyChanges, problemWithPlan, evaluate } from './suggest.js';
-import { planToCsv, planToIcs, planToXlsx } from './exporters.js';
+import { planToIcs, planToXlsx, planToGrid, gridToTsv, GRID_DEFAULTS } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
 const undoStack = []; // { key, json }: duties plus the variant list of the plan before a change
@@ -108,7 +108,8 @@ export function renderPlanView() {
     h('div', { class: 'actions noprint' },
       h('button', { class: 'btn solid', onClick: () => runGeneration() }, hasPlan ? 'Neu erstellen' : 'Plan erstellen'),
       canUndo ? h('button', { class: 'btn', onClick: () => undo(key) }, 'Rückgängig') : null,
-      hasPlan ? h('button', { class: 'btn', title: 'Excel-Datei im Aufbau der Kalenderansicht', onClick: () => downloadFile(`dienstplan-${key}.xlsx`, planToXlsx(s, P), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel') : null,
+      hasPlan ? h('button', { class: 'btn', title: 'Tabelle in die Zwischenablage, zum Einfügen in eine eigene Excel-Vorlage', onClick: () => openGridCopy(s, P) }, 'Für Excel kopieren') : null,
+      hasPlan ? h('button', { class: 'btn', title: 'Excel-Datei: Kalenderansicht, Tabelle zum Einfügen, Liste aller Dienste', onClick: () => downloadFile(`dienstplan-${key}.xlsx`, planToXlsx(s, P, gridOptionsOf(s)), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel-Datei') : null,
       h('span', { class: 'status-line' }, `${STATUS[plan.status] || ''} · Abgabe bis ${deadline} · `, statusText),
       h('details', { class: 'more' },
         h('summary', {}, 'Weitere Optionen'),
@@ -119,7 +120,6 @@ export function renderPlanView() {
           h('label', {}, 'Status ', h('select', { onChange: (e) => { plan.status = e.target.value; save(); store.render(); } }, Object.entries(STATUS).map(([v, l]) => h('option', { value: v, selected: plan.status === v }, l)))),
           hasPlan ? h('div', { class: 'row' },
             h('button', { class: 'btn', onClick: () => window.print() }, 'Drucken'),
-            h('button', { class: 'btn', onClick: () => downloadFile(`dienstplan-${key}.csv`, planToCsv(s, P), 'text/csv') }, 'CSV-Datei'),
             h('button', { class: 'btn quiet', onClick: () => clearPlan(key) }, 'Plan leeren')) : null))),
     people.some((p) => p.active) ? null : h('p', { class: 'hint' }, 'Noch keine Personen angelegt (Reiter „Personen“).'),
     report ? renderRuleCheck(s, P, key, report, openRules, A) : null,
@@ -512,4 +512,62 @@ function renderVariants(s, P, key, plan, openRules) {
         h('div', { class: 'hint' }, profileOf(P, v.duties)),
         v.open?.length ? h('div', { class: 'hint' }, `nicht ganz erfüllt: ${v.open.join(', ')}`) : h('div', { class: 'hint' }, 'alle Regeln erfüllt')),
       h('button', { class: 'btn', onClick: () => swap(i) }, 'Übernehmen')))]);
+}
+
+/** Options of "Für Excel kopieren", kept in the state so they fit the same template every month. */
+function gridOptionsOf(s) {
+  return { ...GRID_DEFAULTS, ...(s.ui.gridOpts || {}) };
+}
+
+/**
+ * Dialog "Für Excel kopieren": the plan as a plain table (one row per person, one column per
+ * day, only the duty time in a cell) for pasting into an existing Excel template whose layout the
+ * app does not know. Pasting keeps the template's formatting. Options and a preview.
+ */
+function openGridCopy(s, P) {
+  openModal('Für Excel kopieren', (close) => {
+    const wrap = h('div', {});
+    const draw = () => {
+      const o = gridOptionsOf(s);
+      const set = (f, v) => { s.ui.gridOpts = { ...o, [f]: v }; save(); draw(); };
+      const radio = (f, choices) => h('div', { class: 'row wrap' }, choices.map(([v, l]) => h('label', { class: 'check' },
+        h('input', { type: 'radio', name: `grid-${f}`, checked: o[f] === v, onChange: () => set(f, v) }), l)));
+      const rows = planToGrid(s, P, o);
+      const cols = Math.min(rows[0]?.length || 0, (o.names ? 1 : 0) + 7);
+      const copy = async () => {
+        const text = gridToTsv(rows);
+        try {
+          await navigator.clipboard.writeText(text);
+          close();
+          toast('Kopiert. In Excel die Zielzelle anklicken und einfügen (Strg+V / Cmd+V).');
+        } catch {
+          // Clipboard API not allowed (for example a page opened from disk): copy from a selected
+          // text field with the older copy command; if that fails too, the user copies by hand
+          wrap.querySelector('.copyfallback')?.remove();
+          const area = h('textarea', { class: 'copyarea', readonly: true }, text);
+          const box = h('div', { class: 'copyfallback' }, area);
+          wrap.append(box);
+          area.focus();
+          area.select();
+          let ok = false;
+          try { ok = document.execCommand('copy'); } catch { ok = false; }
+          if (ok) { close(); toast('Kopiert. In Excel die Zielzelle anklicken und einfügen (Strg+V / Cmd+V).'); return; }
+          box.prepend(h('p', { class: 'hint' }, 'Automatisches Kopieren ist hier nicht erlaubt. Der Text ist markiert: mit Strg+C / Cmd+C kopieren.'));
+        }
+      };
+      wrap.replaceChildren(
+        h('p', { class: 'hint' }, 'Eine Zeile pro Person, eine Spalte pro Tag, in jeder Zelle nur die Uhrzeit. In der Excel-Vorlage die Zelle links oben anklicken und einfügen: Die Formatierung der Vorlage bleibt erhalten.'),
+        h('div', { class: 'gridopts' },
+          h('div', {}, h('strong', {}, 'Kopf'), radio('header', [['two', 'Wochentag und Datum (zwei Zeilen)'], ['one', 'in einer Zeile („Di 01.12.“)'], ['none', 'kein Kopf']])),
+          h('div', {}, h('strong', {}, 'Tage'), radio('days', [['all', 'alle Tage des Monats'], ['weekdays', 'ohne Wochenende']])),
+          h('div', {}, h('strong', {}, 'Uhrzeit'), radio('time', [['short', '14–19'], ['long', '14:00–19:00']])),
+          h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: o.names, onChange: (e) => set('names', e.target.checked) }), 'Namen in der ersten Spalte')),
+        h('div', { class: 'tablewrap' }, h('table', { class: 'grid preview' }, h('tbody', {}, rows.map((r) => h('tr', {},
+          r.slice(0, cols).map((v) => h('td', {}, v)), r.length > cols ? h('td', { class: 'hint' }, '…') : null))))),
+        h('p', { class: 'hint' }, `${rows.length} Zeilen × ${rows[0]?.length || 0} Spalten. Dieselbe Tabelle steht auch im Blatt „Zum Einfügen“ der Excel-Datei.`),
+        h('div', { class: 'row end' }, h('button', { class: 'btn', onClick: close }, 'Abbrechen'), h('button', { class: 'btn solid', onClick: copy }, 'In die Zwischenablage kopieren')));
+    };
+    draw();
+    return wrap;
+  });
 }

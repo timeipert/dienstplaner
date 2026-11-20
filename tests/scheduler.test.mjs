@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newState, normalizeState, getPlan, blockString, dutyKey } from '../src/js/model.js';
 import { generate, buildProblem, analyze, storedChoice, effectiveDay } from '../src/js/scheduler.js';
-import { planToCsv, planToIcs } from '../src/js/exporters.js';
+import { planToList, planToIcs } from '../src/js/exporters.js';
 import { minutesOf, weekdayOf } from '../src/js/util.js';
 
 const KEY = '2026-12';
@@ -135,7 +135,7 @@ test('exports contain the duties', () => {
   const { s, r } = runScenario();
   getPlan(s, KEY).duties = r.duties;
   const P = buildProblem(s, KEY);
-  assert.ok(planToCsv(s, P).includes('J1'));
+  assert.ok(planToList(s, P).some((row) => row[2] === 'J1'));
   assert.ok(planToIcs(s, P, pid(s, 'N')).includes('BEGIN:VEVENT'));
 });
 

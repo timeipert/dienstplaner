@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { inflateRawSync } from 'node:zlib';
 import { newState, getPlan } from '../src/js/model.js';
 import { generate, buildProblem } from '../src/js/scheduler.js';
-import { planToXlsx } from '../src/js/exporters.js';
+import { planToXlsx, planToGrid, gridToTsv } from '../src/js/exporters.js';
 import { zipStore } from '../src/js/xlsx.js';
 
 /** Reads the entries of a ZIP archive (stored or deflated) into { name: text }. */
@@ -41,4 +41,33 @@ test('Excel export: calendar layout with weekday header, week blocks, duties and
   for (const t of ['Mo', 'So', 'KW 49', 'KW 53', '1. Dezember', 'J1', 'N', 'Std. Woche']) assert.ok(sheet.includes(`>${t}<`), t);
   assert.match(sheet, />14–\d\d(:30)? W</, 'Tuesday duty with appointment mark');
   assert.match(sheet, />\d+(,5)? \/ \d+(,5)?</, 'worked / target hours');
+});
+
+test('Excel export: sheets "Zum Einfügen" and "Daten" after the calendar', () => {
+  const s = testState();
+  getPlan(s, '2026-12').duties = generate(s, '2026-12', { budgetMs: 300 }).duties;
+  const files = unzip(planToXlsx(s, buildProblem(s, '2026-12', { keep: 'all' })));
+  assert.match(files['xl/workbook.xml'], /name="Dezember 2026".*name="Zum Einfügen".*name="Daten"/);
+  assert.ok(files['xl/worksheets/sheet2.xml'].includes('>01.12.2026<'));
+  assert.ok(files['xl/worksheets/sheet3.xml'].includes('>Stunden<'));
+});
+
+test('table for a template: persons in rows, weekday and date headers, only times in cells', () => {
+  const s = testState();
+  const plan = getPlan(s, '2026-12');
+  const j1 = s.people[0].id;
+  plan.duties = { [`${j1}|2026-12-01`]: { from: '14:00', to: '19:00' }, [`${j1}|2026-12-02`]: { from: '14:30', to: '19:30' } };
+  const P = buildProblem(s, '2026-12', { keep: 'all' });
+  const two = planToGrid(s, P);
+  assert.deepEqual(two[0].slice(0, 3), ['', 'Di', 'Mi']); // 1 Dec 2026 is a Tuesday
+  assert.deepEqual(two[1].slice(0, 3), ['', '01.12.2026', '02.12.2026']);
+  assert.deepEqual(two[2].slice(0, 3), ['J1', '14–19', '14:30–19:30']);
+  assert.equal(two.length, 2 + 3);
+  assert.equal(two[0].length, 1 + 31);
+  const bare = planToGrid(s, P, { header: 'none', names: false, days: 'weekdays', time: 'long' });
+  assert.equal(bare.length, 3);
+  assert.equal(bare[0].length, 23); // weekdays of December 2026
+  assert.deepEqual(bare[0].slice(0, 2), ['14:00–19:00', '14:30–19:30']);
+  assert.deepEqual(planToGrid(s, P, { header: 'one' })[0].slice(1, 3), ['Di 01.12.', 'Mi 02.12.']);
+  assert.equal(gridToTsv([['a', 'b'], ['', 'c']]), 'a\tb\r\n\tc\r\n');
 });

@@ -9,7 +9,7 @@ contract hours of every person and spreads special days fairly.
 - **Where it runs:** GitHub Pages (static file, no backend). All data stays in the browser of the
   person who plans. Separate project from the KULT shift planner (`../shift-planner`, Firebase),
   which it was forked from on 2026-11-20 and which stays unchanged.
-- **State:** 2026-11-20, version 0.6.0. Published at https://timeipert.github.io/dienstplaner/
+- **State:** 2026-11-20, version 0.7.0. Published at https://timeipert.github.io/dienstplaner/
   (repository `timeipert/dienstplaner`). The app ships only neutral defaults ("Grundeinstellungen":
   no persons, no appointments, no named examples). The three-person scenario of the first team is
   kept as test data in `tests/fixture.mjs`.
@@ -52,9 +52,9 @@ The interface shows the essentials first and folds details away:
 
 - Tabs in the order of the monthly work: **Plan · Wünsche · Termine · Auswertung**, then the
   tabs that change rarely: **Personen · Regeln · Einstellungen**.
-- **Plan:** month, one main button ("Plan erstellen" / "Neu erstellen"), "Excel", a status line
+- **Plan:** month, one main button ("Plan erstellen" / "Neu erstellen"), "Für Excel kopieren", "Excel-Datei", a status line
   (status, deadline, number of unmet rules) and "Weitere Optionen" (computing time, keep existing
-  duties, status, print, CSV, clear). Below: collapsible sections, each a single line with a
+  duties, status, print, clear). Below: collapsible sections, each a single line with a
   summary until opened: "Regelprüfung" (rule check), "Nur für <Monat>" (month settings),
   the plan itself, "Stunden" (hours per week).
 - **Regeln:** every rule as one sentence in five collapsed groups (Besetzung, Arbeitszeit,
@@ -105,7 +105,20 @@ following month by default.
      letter marks an appointment, the last column shows worked / target hours of the week.
    Status "Wünsche sammeln → Entwurf → Abgeschlossen".
 5. **Auswertung:** shows how well the plan meets every rule and how fair it is (see below).
-6. Exports: button "Excel" (an .xlsx file laid out like the calendar view: columns Mon–Sun, one block per week with one row per person, duty times as text, weekly hours in the last column, rule violations red), print (A4 landscape), CSV and print under "Weitere Optionen", calendar file (.ics) per person in the section "Stunden".
+6. Exports (state 2026-11-20, version 0.7.0):
+   - **"Für Excel kopieren"** puts the plan as a plain table on the clipboard, for pasting into an
+     existing Excel template whose layout the app does not know: one row per person, one column
+     per day, each cell only the duty time ("14–19"). Options, kept in `ui.gridOpts`: header
+     (weekday and date in two rows, in one row, or none), all days or without weekend days, time
+     format "14–19" or "14:00–19:00", names in the first column. In the template, click the top
+     left target cell and paste; the template keeps its formatting. A preview shows the table.
+   - **"Excel-Datei"**: sheet 1 laid out like the calendar view (columns Mon–Sun, one block per
+     week, weekly hours in the last column, rule violations red), sheet 2 "Zum Einfügen" (the
+     same table as "Für Excel kopieren"), sheet 3 "Daten" (one row per duty: date, weekday,
+     person, start, end, hours; for templates that look values up with formulas). It replaces
+     the CSV export (removed in 0.7.0).
+   - Print (A4 landscape) under "Weitere Optionen"; calendar file (.ics) per person in the
+     section "Stunden".
 
 ## Evaluation tab ("Auswertung")
 
@@ -175,8 +188,8 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
 | `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met, pool of variants. |
 | `src/js/suggest.js` | Ranked suggestions for one duty (times, swaps, trades, moves) and their effect on the plan. |
-| `src/js/exporters.js` | CSV, iCalendar and Excel export (calendar layout). |
-| `src/js/xlsx.js` | Minimal .xlsx writer (ZIP without compression, one sheet, styles); no library. |
+| `src/js/exporters.js` | Table for pasting into a template (`planToGrid`), list of duties, iCalendar, Excel file (three sheets). |
+| `src/js/xlsx.js` | Minimal .xlsx writer (ZIP without compression, one or more sheets, styles); no library. |
 | `src/js/view-rules.js` | Rules tab: rules as sentences, importance levels. |
 | `src/js/store.js` | localStorage persistence. |
 | `src/js/view-*.js`, `app.js`, `ui-core.js` | UI (plan timeline, wishes grid, appointments, people, setup, data). |

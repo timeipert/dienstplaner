@@ -1,16 +1,12 @@
-// File exports (CSV, iCalendar, Excel). Pure functions that return text or bytes; nothing is sent anywhere.
+// Exports: table for pasting into a template, list of duties, iCalendar, Excel. Pure functions that
+// return text or bytes; nothing is sent anywhere.
 import { icsStamp, formatDay, minutesOf, fmtMin, fmtHours, formatMonth, WEEKDAYS_SHORT, MONTHS } from './util.js';
 import { dutyKey, STATUS } from './model.js';
 import { analyze, storedChoice } from './scheduler.js';
-import { buildXlsx } from './xlsx.js';
+import { buildWorkbook } from './xlsx.js';
 
-function csvCell(v) {
-  const s = String(v ?? '');
-  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-/** One row per duty: date, weekday, person, start, end, hours. Semicolon separated (German Excel). */
-export function planToCsv(state, P) {
+/** One row per duty: date, weekday, person, start, end, hours (sheet "Daten" of the Excel file). */
+export function planToList(state, P) {
   const plan = state.plans[P.key] || { duties: {} };
   const rows = [['Datum', 'Tag', 'Person', 'Beginn', 'Ende', 'Stunden']];
   for (const day of P.days) {
@@ -18,10 +14,54 @@ export function planToCsv(state, P) {
       const du = plan.duties[dutyKey(person.id, day.date)];
       if (!du) continue;
       const h = (minutesOf(du.to) - minutesOf(du.from)) / 60;
-      rows.push([day.date, formatDay(day.date).split(' ')[0], person.name, du.from, du.to, String(h).replace('.', ',')]);
+      rows.push([dateDe(day.date), WEEKDAYS_SHORT[day.wd], person.name, du.from, du.to, String(h).replace('.', ',')]);
     }
   }
-  return '\ufeff' + rows.map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
+  return rows;
+}
+
+const dateDe = (date) => `${date.slice(8)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;
+
+/**
+ * Options of the table for pasting into an existing Excel template (planToGrid):
+ *   header: 'two' = weekday row and date row, 'one' = "Mo 01.12." in one row, 'none'
+ *   days:   'all' = every day of the month, 'weekdays' = without weekend days
+ *   names:  first column with the person names
+ *   time:   'short' = "14–19" (half hours "14:30–19"), 'long' = "14:00–19:00"
+ */
+export const GRID_DEFAULTS = { header: 'two', days: 'all', names: true, time: 'short' };
+
+/**
+ * The plan as a plain table: one row per person, one column per day, a cell holds only the duty
+ * time. Meant to be pasted into a template whose layout is not known to the app: the template
+ * keeps its formatting, only values are inserted. Returns rows of strings.
+ */
+export function planToGrid(state, P, options = {}) {
+  const o = { ...GRID_DEFAULTS, ...options };
+  const plan = state.plans[P.key] || { duties: {} };
+  const days = P.days.filter((d) => o.days === 'all' || !d.weekend);
+  const people = P.people.filter((person) => person.active || Object.keys(plan.duties).some((k) => k.startsWith(person.id + '|')));
+  const fmt = (t) => (o.time === 'long' ? t : shortT(t));
+  const lead = o.names ? [''] : [];
+  const rows = [];
+  if (o.header === 'two') {
+    rows.push([...lead, ...days.map((d) => WEEKDAYS_SHORT[d.wd])]);
+    rows.push([...lead, ...days.map((d) => dateDe(d.date))]);
+  } else if (o.header === 'one') {
+    rows.push([...lead, ...days.map((d) => `${WEEKDAYS_SHORT[d.wd]} ${d.date.slice(8)}.${d.date.slice(5, 7)}.`)]);
+  }
+  for (const person of people) {
+    rows.push([...(o.names ? [person.name] : []), ...days.map((d) => {
+      const du = plan.duties[dutyKey(person.id, d.date)];
+      return du ? `${fmt(du.from)}–${fmt(du.to)}` : '';
+    })]);
+  }
+  return rows;
+}
+
+/** Tab-separated text: pasting it into Excel fills one cell per value. */
+export function gridToTsv(rows) {
+  return rows.map((r) => r.map((v) => String(v).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n') + '\r\n';
 }
 
 function icsText(s) {
@@ -69,8 +109,9 @@ const shortT = (t) => t.replace(/:00$/, '');
  * per week with a date row and one row per person, duty times as text ("14–19"), the last column
  * worked / target hours of the week. Appointments are marked with their initial letter; cells
  * with a rule violation are red. P: buildProblem(state, key, { keep: 'all' }).
+ * Second sheet "Zum Einfügen" (planToGrid with gridOptions), third sheet "Daten" (planToList).
  */
-export function planToXlsx(state, P) {
+export function planToXlsx(state, P, gridOptions = GRID_DEFAULTS) {
   const plan = state.plans[P.key] || { duties: {}, status: 'collecting' };
   const A = analyze(P, storedChoice(P));
   const cfg = P.cfg;
@@ -110,5 +151,12 @@ export function planToXlsx(state, P) {
   rows.push([]);
   const legend = ['14–19 = Dienst von 14:00 bis 19:00', ...[...used].map(([k, t]) => `${k} = ${t}`), 'rot = Regel verletzt', 'Std. Woche = geleistet / Soll'];
   rows.push([{ v: legend.join(' · '), s: 'hint' }]);
-  return buildXlsx({ name: formatMonth(P.key), rows, widths: [11, 15, 15, 15, 15, 15, 15, 15, 12], merges: ['A1:I1', `A${rows.length}:I${rows.length}`], freezeRows: 3, landscape: true });
+  const calendar = { name: formatMonth(P.key), rows, widths: [11, 15, 15, 15, 15, 15, 15, 15, 12], merges: ['A1:I1', `A${rows.length}:I${rows.length}`], freezeRows: 3, landscape: true };
+  // sheet "Zum Einfügen": the same table as "Für Excel kopieren", to copy from the file into a template
+  const grid = planToGrid(state, P, gridOptions);
+  const gridSheet = { name: 'Zum Einfügen', rows: grid.map((r) => r.map((v) => ({ v, s: 'cell' }))), widths: grid[0] ? grid[0].map(() => 11) : [], landscape: true };
+  // sheet "Daten": one row per duty, for templates that look values up with formulas
+  const list = planToList(state, P);
+  const listSheet = { name: 'Daten', rows: list.map((r, i) => r.map((v) => ({ v, s: i === 0 ? 'header' : 'cell' }))), widths: [12, 6, 14, 8, 8, 8], freezeRows: 1 };
+  return buildWorkbook([calendar, gridSheet, listSheet]);
 }
