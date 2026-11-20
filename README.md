@@ -87,6 +87,14 @@ following month by default.
    Gewichten neu erstellen" to favour that rule; other rules then give way. It also lists what no
    plan can avoid (lower bounds, see `docs/generator.md`), for example duties on consecutive days
    for 25 h/week with at most 6-hour duties; those do not count as violations.
+   **"Varianten"** (variants): the search keeps up to three further plans that are at most 10 %
+   worse and differ in at least 6 person-days; each shows a profile (Fridays, late duties,
+   weekend day per person) and its unmet rules; "Übernehmen" exchanges it with the shown plan.
+   **Duty editor → "Vorschläge"** (suggestions): clicking a duty lists ranked changes for the whole
+   plan (other times, no duty, hand over to or take over from a colleague, exchange times on the
+   same day, trade days with a colleague, move to another day of the week), each marked
+   "besser / gleich gut / schlechter" with points (weighted rule deviations). Only changes
+   without a hard-rule violation are offered; "Rückgängig" undoes them.
    Then adjust duties by clicking a lane (timeline) or a cell
    (calendar); "Fixieren" keeps a duty. Two views, switch "Zeitleiste | Kalender":
    - Zeitleiste: one row per day, one lane per person, bars over the hours.
@@ -163,7 +171,8 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `src/js/model.js` | State shape (schema 2), defaults, presets. |
 | `src/js/scheduler.js` | Candidate duties, cost function, optimizer, analysis. Authoritative for rule semantics. |
 | `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
-| `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met. |
+| `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met, pool of variants. |
+| `src/js/suggest.js` | Ranked suggestions for one duty (times, swaps, trades, moves) and their effect on the plan. |
 | `src/js/exporters.js` | CSV, iCalendar and Excel export (calendar layout). |
 | `src/js/xlsx.js` | Minimal .xlsx writer (ZIP without compression, one sheet, styles); no library. |
 | `src/js/view-rules.js` | Rules tab: rules as sentences, importance levels. |
@@ -171,6 +180,7 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `src/js/view-*.js`, `app.js`, `ui-core.js` | UI (plan timeline, wishes grid, appointments, people, setup, data). |
 | `build.mjs` | Concatenates the modules into `dist/dienstplaner.html`; fails on duplicate top-level names. |
 | `tests/scheduler.test.mjs` | Scenario tests (the first team's rules). |
+| `tests/suggest.test.mjs` | Suggestions and variants. |
 | `tests/xlsx.test.mjs` | ZIP writer and Excel export. |
 | `tests/month-search.test.mjs` | Month settings, vacation edges, lower bounds, time-limited search. |
 | `docs/generator.md` | How the generator works. |

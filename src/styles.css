@@ -351,3 +351,13 @@ details.more .more-body { position: absolute; right: 0; top: 1.8rem; z-index: 5;
 .print-only { display: none; }
 @media print { .print-only { display: block; } details.group { display: none; } }
 nav .tab.gap { margin-left: 1.4rem; padding-left: 1.4rem; border-left: 1px solid var(--line); }
+
+/* duty editor: ranked suggestions */
+.suggestions h2 { margin-top: 1.2rem; }
+.suggestions h3 { font-size: .8rem; color: var(--mid); margin: .7rem 0 .2rem; font-weight: 600; }
+ul.suggest { list-style: none; padding: 0; margin: 0; }
+ul.suggest li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border-bottom: 1px dotted var(--line); }
+ul.suggest .btn.quiet { text-align: left; padding-left: 0; color: var(--ink); }
+.delta { font-size: .75rem; color: var(--mid); white-space: nowrap; }
+.delta.better { color: var(--ink); font-weight: 600; }
+.delta.worse { color: var(--soft); }

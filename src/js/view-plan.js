@@ -7,6 +7,7 @@ import { buildProblem, analyze, storedChoice } from './scheduler.js';
 import { buildReport, weightFor } from './report.js';
 import { importanceControl } from './view-rules.js';
 import { createSearch, openConstraints } from './search.js';
+import { suggestFor, deltaText, applyChanges } from './suggest.js';
 import { planToCsv, planToIcs, planToXlsx } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
@@ -121,6 +122,7 @@ export function renderPlanView() {
             h('button', { class: 'btn quiet', onClick: () => clearPlan(key) }, 'Plan leeren')) : null))),
     people.some((p) => p.active) ? null : h('p', { class: 'hint' }, 'Noch keine Personen angelegt (Reiter „Personen“).'),
     report ? renderRuleCheck(s, P, key, report, openRules, A) : null,
+    hasPlan ? renderVariants(s, P, key, plan, openRules) : null,
     renderMonthSettings(s, key),
     h('p', { class: 'print-title' }, `${cfg.title} – ${formatMonth(key)}${plan.status !== 'final' ? ' (Entwurf)' : ''}`),
     !hasPlan ? h('div', { class: 'empty-state' },
@@ -323,7 +325,28 @@ function openEditor(P, A, person, day, d) {
     h('label', { class: 'check' }, (lockBox = h('input', { type: 'checkbox', checked: !!du?.locked })), 'Fixieren (bleibt bei „Plan erstellen“ erhalten)'),
     h('div', { class: 'row end' },
       du ? h('button', { class: 'btn', onClick: () => apply(close, true) }, 'Kein Dienst') : null,
-      h('button', { class: 'btn solid', onClick: () => apply(close, false) }, 'Speichern'))));
+      h('button', { class: 'btn solid', onClick: () => apply(close, false) }, 'Speichern')),
+    renderSuggestions(P.key, person, day, close)));
+}
+
+/** Ranked alternatives for one duty: other times, hand over, take over, trade, move. */
+function renderSuggestions(key, person, day, close) {
+  const s = store.state;
+  if (!person.active || day.closed) return null;
+  const res = suggestFor(s, key, person.id, day.date);
+  const all = [...res.times, ...res.moves];
+  if (!all.length) return null;
+  const same = all.filter((o) => Math.abs(o.delta) <= 1).length;
+  const take = (o) => { pushUndo(key); applyChanges(s, key, o.changes); save(); close(); toast('Übernommen. „Rückgängig“ macht es rückgängig.'); store.render(); };
+  const list = (title, opts) => (opts.length ? [h('h3', {}, title), h('ul', { class: 'suggest' }, opts.map((o) => {
+    const dt = deltaText(o.delta);
+    return h('li', {}, h('button', { class: 'btn quiet', onClick: () => take(o) }, o.label), h('span', { class: `delta ${dt.cls}` }, dt.text));
+  }))] : null);
+  return h('div', { class: 'suggestions' },
+    h('h2', {}, 'Vorschläge'),
+    h('p', { class: 'hint' }, `Geordnet nach Wirkung auf den ganzen Plan (Punkte = gewichtete Regelabweichungen). Nur Änderungen ohne Verstoß gegen „gilt immer“.${same ? ` ${same} Möglichkeit(en) sind gleich gut wie der jetzige Stand.` : ''}`),
+    list('Andere Zeit', res.times),
+    list('Tauschen, abgeben, verschieben', res.moves));
 }
 
 async function runGeneration() {
@@ -360,6 +383,10 @@ async function runGeneration() {
   const plan = getPlan(s, key);
   const locked = Object.fromEntries(Object.entries(plan.duties).filter(([, v]) => v.locked));
   plan.duties = { ...res.duties, ...locked };
+  // other plans of similar quality from the same search, to compare and switch (see renderVariants)
+  plan.variants = (res.variants || []).map((v) => ({ duties: { ...v.duties, ...locked }, cost: v.cost, diff: v.diff, open: v.open }));
+  plan.variantCost = res.cost;
+  plan.currentCost = res.cost;
   if (plan.status === 'collecting') plan.status = 'draft';
   lastRun = { key, runs: res.runs, spent: res.spent, reason: res.reason, open: res.open.length };
   save();
@@ -431,4 +458,50 @@ function renderRuleCheck(s, P0, key, report, open, A) {
       h('ul', { class: 'notes' }, report.hints.map((t) => h('li', {}, t)))) : null,
     msgs.length ? h('details', { class: 'sub' }, h('summary', {}, `Einzelne Stellen im Plan (${msgs.length})`),
       h('ul', { class: 'notes' }, msgs.slice(0, 80).map((m) => h('li', { class: m.level }, m.text)))) : null]);
+}
+
+/** Short profile of a set of duties: Fridays (balance weekdays), weekend days and late duties per person. */
+function profileOf(P, duties) {
+  const cfg = P.cfg;
+  const lateEnd = minutesOf(cfg.lateRule.endAfter);
+  return P.people.filter((p) => p.active).map((person) => {
+    let bal = 0, late = 0;
+    const we = [];
+    for (const day of P.days) {
+      const du = duties[dutyKey(person.id, day.date)];
+      if (!du) continue;
+      if (cfg.balanceWeekdays.includes(day.wd)) bal++;
+      if (day.weekend) we.push(formatDay(day.date));
+      if (minutesOf(du.to) > lateEnd) late++;
+    }
+    const balName = cfg.balanceWeekdays.map((d) => WEEKDAYS_SHORT[d]).join('/');
+    return `${person.name}: ${balName ? `${bal}× ${balName}, ` : ''}${late}× spät, Wochenende ${we.join(', ') || '–'}`;
+  }).join(' · ');
+}
+
+/** Other plans of similar quality from the last search; "Übernehmen" exchanges them with the shown plan. */
+function renderVariants(s, P, key, plan, openRules) {
+  const vs = plan.variants || [];
+  if (!vs.length) return null;
+  const base = plan.variantCost;
+  const quality = (c) => (base == null ? '' : c <= base + 1 ? 'gleich gut' : `${Math.max(1, Math.round(((c - base) / Math.max(1, base)) * 100))} % mehr Abweichungen`);
+  const swap = (i) => {
+    pushUndo(key);
+    const v = vs[i];
+    const cur = { duties: plan.duties, cost: plan.currentCost ?? base, diff: v.diff, open: openRules.map((c) => c.label.replace(/ \(.*\)$/, '')) };
+    plan.duties = v.duties;
+    plan.currentCost = v.cost;
+    vs[i] = cur;
+    save();
+    toast('Variante übernommen. Die vorige steht jetzt in der Liste.');
+    store.render();
+  };
+  return section('variants', 'Varianten', `${vs.length} weitere Plan-Variante(n) von ähnlicher Qualität`, () => [
+    h('p', { class: 'hint' }, 'Aus derselben Berechnung: Pläne, die ähnlich gut sind, sich aber an mehreren Tagen unterscheiden. „Übernehmen“ tauscht sie mit dem angezeigten Plan (der bleibt in der Liste).'),
+    h('div', { class: 'rule' }, h('div', { class: 'rtext' }, h('strong', {}, 'Angezeigter Plan'), h('div', { class: 'hint' }, profileOf(P, plan.duties)))),
+    vs.map((v, i) => h('div', { class: 'rule' },
+      h('div', { class: 'rtext' }, h('strong', {}, `Variante ${i + 1}`), ` – an ${v.diff} Tagen anders · ${quality(v.cost)}`,
+        h('div', { class: 'hint' }, profileOf(P, v.duties)),
+        v.open?.length ? h('div', { class: 'hint' }, `nicht ganz erfüllt: ${v.open.join(', ')}`) : h('div', { class: 'hint' }, 'alle Regeln erfüllt')),
+      h('button', { class: 'btn', onClick: () => swap(i) }, 'Übernehmen')))]);
 }

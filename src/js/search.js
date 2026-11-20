@@ -35,14 +35,41 @@ export function createSearch(P, opts = {}) {
     const fromBest = best && runs % 2 === 1;
     current = createOptimizer(P, { budgetMs: runMs, seed: seed++, start: fromBest ? best.choice : null, T0: fromBest ? 15 : 60 });
   };
+  // pool of distinct good plans (variants): kept when they differ from every better plan in
+  // at least MIN_DIFF person-days
+  const pool = [];
+  const MIN_DIFF = 6;
+  const diffCount = (a, b) => {
+    let n = 0;
+    for (let p = 0; p < a.length; p++) for (let d = 0; d < a[p].length; d++) if (a[p][d] !== b[p][d]) n++;
+    return n;
+  };
+  const addToPool = (res) => {
+    if (pool.some((x) => diffCount(x.choice, res.choice) < MIN_DIFF && x.cost <= res.cost)) return;
+    for (let i = pool.length - 1; i >= 0; i--) if (diffCount(pool[i].choice, res.choice) < MIN_DIFF) pool.splice(i, 1);
+    pool.push(res);
+    pool.sort((a, b) => a.cost - b.cost);
+    if (pool.length > 4) pool.length = 4;
+  };
   const finishRun = () => {
     const res = current.result();
     runs++;
     current = null;
+    addToPool(res);
     if (!best || res.cost < best.cost - 1e-9) {
       const report = buildReport(P, res.choice);
       best = { ...res, report, open: openConstraints(report) };
     }
+  };
+
+  /** Up to 3 plans besides the best whose cost is at most 10 % higher, with their open rules. */
+  const variantsOf = () => {
+    if (!best) return [];
+    return pool.filter((x) => x.choice !== best.choice && diffCount(x.choice, best.choice) >= MIN_DIFF && x.cost <= best.cost * 1.1 + 5).slice(0, 3).map((x) => {
+      const report = buildReport(P, x.choice);
+      const open = openConstraints(report);
+      return { duties: x.duties, cost: x.cost, diff: diffCount(x.choice, best.choice), open: open.map((c) => c.label.replace(/ \(.*\)$/, '')) };
+    });
   };
 
   return {
@@ -67,7 +94,7 @@ export function createSearch(P, opts = {}) {
     stop() { stopped = true; },
     progress: () => (reason ? 1 : Math.min(1, untilMet ? spent / timeoutMs : spent / runMs)),
     state: () => ({ runs, spent, reason, open: best ? best.open.length : null, cost: best ? best.cost : null }),
-    result: () => ({ ...best, runs, spent, reason }),
+    result: () => ({ ...best, runs, spent, reason, variants: variantsOf() }),
   };
 }
 

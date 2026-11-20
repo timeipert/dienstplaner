@@ -469,34 +469,65 @@ export function createOptimizer(P, opts = {}) {
     return Math.floor(rng() * list.length);
   };
 
+  // index of the candidate with the same start and end on another cell (-1 if none)
+  const timeIndex = P.cand.map((row) => row.map((list) => new Map(list.map((c, i) => [c.from * 2000 + c.to, i]))));
+  const sameTime = (p, d, du) => (du ? timeIndex[p][d].get(du.from * 2000 + du.to) ?? -1 : -1);
+  const orRandom = (p, d, i) => (i >= 0 ? i : Math.floor(rng() * P.cand[p][d].length));
+  const free = (p, d) => !P.fixed[p][d] && P.cand[p][d].length > 0;
+  const dutyAt = (p, d) => (choice[p][d] >= 0 ? P.cand[p][d][choice[p][d]] : null);
+
   const iterate = (T) => {
     if (!cells.length) return;
     const r = rng();
     let changes;
-    if (r < 0.55) {
+    if (r < 0.4) {
       const [p, d] = pick(cells);
       const c = randomOption(p, d);
       if (c === choice[p][d]) return;
       changes = [[p, d, c]];
-    } else if (r < 0.85) {
-      // move a duty of one person to another day of the same week
+    } else if (r < 0.6) {
+      // move a duty of one person to another day of the same week, keeping its times if possible
       const p = Math.floor(rng() * nP);
       const mine = cellsOf[p].filter((d) => choice[p][d] >= 0 && !P.forced[p][d]);
       if (!mine.length) return;
       const d1 = pick(mine);
-      const free = cellsOf[p].filter((d) => choice[p][d] < 0 && P.days[d].w === P.days[d1].w);
-      if (!free.length) return;
-      const d2 = pick(free);
-      changes = [[p, d1, -1], [p, d2, Math.floor(rng() * P.cand[p][d2].length)]];
-    } else {
-      // hand a day over to another person
+      const freeDays = cellsOf[p].filter((d) => choice[p][d] < 0 && P.days[d].w === P.days[d1].w);
+      if (!freeDays.length) return;
+      const d2 = pick(freeDays);
+      changes = [[p, d1, -1], [p, d2, rng() < 0.7 ? orRandom(p, d2, sameTime(p, d2, dutyAt(p, d1))) : Math.floor(rng() * P.cand[p][d2].length)]];
+    } else if (r < 0.75) {
+      // hand a day over to another person (same times if possible)
       const p = Math.floor(rng() * nP);
       const q = Math.floor(rng() * nP);
       if (p === q) return;
-      const ds = cellsOf[p].filter((d) => choice[p][d] >= 0 && !P.forced[p][d] && choice[q][d] < 0 && !P.fixed[q][d] && P.cand[q][d].length);
+      const ds = cellsOf[p].filter((d) => choice[p][d] >= 0 && !P.forced[p][d] && choice[q][d] < 0 && free(q, d));
       if (!ds.length) return;
       const d = pick(ds);
-      changes = [[p, d, -1], [q, d, Math.floor(rng() * P.cand[q][d].length)]];
+      changes = [[p, d, -1], [q, d, orRandom(q, d, sameTime(q, d, dutyAt(p, d)))]];
+    } else if (r < 0.9) {
+      // two persons trade days: p gives day d1 to q and takes q's day d2 (hours stay similar)
+      const p = Math.floor(rng() * nP);
+      const q = Math.floor(rng() * nP);
+      if (p === q) return;
+      const d1s = cellsOf[p].filter((d) => choice[p][d] >= 0 && !P.forced[p][d] && choice[q][d] < 0 && free(q, d));
+      const d2s = cellsOf[q].filter((d) => choice[q][d] >= 0 && !P.forced[q][d] && choice[p][d] < 0 && free(p, d));
+      if (!d1s.length || !d2s.length) return;
+      const d1 = pick(d1s);
+      const near = d2s.filter((d) => Math.abs(P.days[d].w - P.days[d1].w) <= 1);
+      const d2 = pick(near.length ? near : d2s);
+      changes = [[p, d1, -1], [q, d1, orRandom(q, d1, sameTime(q, d1, dutyAt(p, d1)))], [q, d2, -1], [p, d2, orRandom(p, d2, sameTime(p, d2, dutyAt(q, d2)))]];
+    } else {
+      // two persons on the same day exchange their times
+      const d = Math.floor(rng() * nD);
+      const ps = [];
+      for (let p = 0; p < nP; p++) if (choice[p][d] >= 0 && !P.fixed[p][d]) ps.push(p);
+      if (ps.length < 2) return;
+      const p = pick(ps);
+      const q = pick(ps.filter((x) => x !== p));
+      const ip = sameTime(p, d, dutyAt(q, d));
+      const iq = sameTime(q, d, dutyAt(p, d));
+      if (ip < 0 || iq < 0) return;
+      changes = [[p, d, ip], [q, d, iq]];
     }
     const t = tryChange(changes);
     if (t.ok && (t.delta <= 0 || rng() < Math.exp(-t.delta / T))) {

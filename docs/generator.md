@@ -52,9 +52,11 @@ that appointments still widen the window). The stored person is not changed.
 ## Method
 
 1. Greedy improvement: three passes over all free cells in random order, each cell takes its best option.
-2. Simulated annealing for the time budget (temperature 60 → 0.5): change one cell (often a
-   nearby time), move a duty of a person to another day of the same week, or hand a day over to
-   another person. A move that adds hard-rule violations is rejected. The best plan seen is kept.
+2. Simulated annealing for the time budget (temperature 60 → 0.5) with five moves: change one
+   cell (often a nearby time); move a duty to another day of the same week (same times if
+   possible); hand a day over to another person; two persons trade days (p gives day d1 to q and
+   takes q's day d2, usually in the same or next week, so weekly hours stay similar); two persons
+   on the same day exchange their times. A move that adds hard-rule violations is rejected. The best plan seen is kept.
 3. Runs in steps (`step(ms)`) so the page stays responsive.
 4. Time-limited search (`search.js`, `createSearch`): optimizer runs of 3 s (6 s for limits of
    1 min and more); every second run restarts from the best plan so far at temperature 15, the
@@ -62,6 +64,18 @@ that appointments still widen the window). The stored person is not changed.
    search stops when no rule has status warn or bad, when the time limit is reached, or when the
    user stops it. The plan with the lowest weighted cost is kept, so the weights decide which rule
    gives way when not all can be met.
+
+Variants: every finished run is offered to a pool; a plan enters when it differs from every
+better plan in at least 6 person-days; plans at most 10 % above the best are returned as variants.
+
+## Measured quality (2026-11-20)
+
+Backup of the first team, December 2026, 3 s per run: weighted cost about 1500, of which about
+960 are duties on consecutive days; the lower bounds (below) show about 20 of these 24 pairs are
+unavoidable. A 20 s search reaches about 1420–1450. Tuning the temperature (15 / 60 / 150) and
+the additional moves changed the mean by less than 2 %, so the search is close to the best
+reachable plan for these weights; differences between good plans are mostly trade-offs, which
+the variants make visible.
 
 ## Lower bounds (report.js `structuralBounds`)
 
