@@ -25,7 +25,7 @@ export function renderDataView() {
     e.target.value = '';
   } });
 
-  return h('section', { class: 'view data' },
+  return h('div', { class: 'data' },
     h('div', { class: 'card wide privacy' },
       h('h2', {}, 'Datenschutz'),
       h('ul', { class: 'plain' },
@@ -41,8 +41,8 @@ export function renderDataView() {
         h('button', { class: 'btn', onClick: () => fileInput.click() }, 'Sicherung einspielen'), fileInput)),
     h('div', { class: 'card' },
       h('h2', {}, 'Vorlagen'),
-      h('p', { class: 'hint' }, 'Eine Vorlage ersetzt die Einrichtung, die Termine und (falls die Vorlage Personen enthält) die Personen. Pläne und Wünsche bleiben.'),
-      h('div', { class: 'row wrap' }, Object.entries(PRESETS).map(([id, p]) => h('button', { class: 'btn', onClick: () => confirmModal('Vorlage anwenden', `„${p.label}“ ersetzt Einrichtung und Termine${p.build().people.length ? ' sowie die Personen' : ''}.`, 'Anwenden', () => {
+      h('p', { class: 'hint' }, 'Eine Vorlage ersetzt Regeln, Einstellungen, Termine und (falls die Vorlage Personen enthält) die Personen. Pläne und Wünsche bleiben.'),
+      h('div', { class: 'row wrap' }, Object.entries(PRESETS).map(([id, p]) => h('button', { class: 'btn', onClick: () => confirmModal('Vorlage anwenden', `„${p.label}“ ersetzt Regeln, Einstellungen und Termine${p.build().people.length ? ' sowie die Personen' : ''}.`, 'Anwenden', () => {
         const built = p.build();
         s.config = built.config;
         if (built.people.length) s.people = built.people;

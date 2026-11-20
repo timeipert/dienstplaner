@@ -23,7 +23,8 @@ export function h(tag, attrs, ...kids) {
 }
 
 export function downloadFile(filename, text, mime = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([text], { type: mime + ';charset=utf-8' }));
+  // text: string (saved as UTF-8) or bytes (Uint8Array, for example an Excel file)
+  const url = URL.createObjectURL(new Blob([text], { type: typeof text === 'string' ? mime + ';charset=utf-8' : mime }));
   const a = h('a', { href: url, download: filename });
   document.body.append(a);
   a.click();

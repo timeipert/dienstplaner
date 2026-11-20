@@ -36,7 +36,7 @@ export const WEIGHT_DEFS = [
   ['consecutive', 'Dienste an zwei Tagen hintereinander (falls vermeiden)', 'je Paar'],
   ['want', '„Möchte arbeiten“ nicht berücksichtigt', 'je Tag'],
   ['outside', 'Dienstzeit außerhalb der benötigten Besetzung (werktags)', 'je halbe Stunde'],
-  ['align', 'Dienste am selben Tag beginnen/enden nicht gleichzeitig (siehe Einrichtung)', 'je halbe Stunde Abstand'],
+  ['align', 'Dienste am selben Tag beginnen/enden nicht gleichzeitig', 'je halbe Stunde Abstand'],
   ['rather', 'Dienst in „eher nicht“-Zeit', 'je halbe Stunde'],
   ['weeklyWish', 'Wöchentlicher Wunsch (z. B. einmal vormittags) nicht erfüllt', 'je fehlendem Dienst'],
   ['vacation', 'Dienst am Tag vor oder nach einer Abwesenheit (Urlaub)', 'je Dienst'],

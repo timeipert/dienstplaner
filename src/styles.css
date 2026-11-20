@@ -303,9 +303,51 @@ table.report tr.st-warn td.mark { color: var(--bad); }
   .lane .bar.bad, .need .gap, table.cal td.cell.bad { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
-/* Month settings and rule check above the plan (collapsible) */
-details.card { border: 1px solid var(--line, #d0d0d0); padding: .5rem .8rem; }
-details.card > summary { cursor: pointer; font-weight: 600; }
-details.card[open] > summary { margin-bottom: .5rem; }
-details.card table.grid { margin: .4rem 0 .6rem; }
-details.card h3 { margin: .8rem 0 .2rem; font-size: .95rem; }
+/* Collapsible groups (plan sections, rules, settings): one line with title and summary,
+   details only when opened */
+details.group { display: block; border-top: 1px solid var(--line); }
+details.group:last-of-type { border-bottom: 1px solid var(--line); }
+details.group > summary { list-style: none; cursor: pointer; display: flex; gap: 1rem; align-items: baseline; padding: .7rem 0; }
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::before { content: '+'; width: 1rem; color: var(--mid); font-family: var(--mono); }
+details.group[open] > summary::before { content: '−'; }
+details.group .gtitle { font-weight: 600; min-width: 11rem; }
+details.group .gsum { color: var(--mid); font-size: .86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+details.group[open] .gsum { white-space: normal; }
+details.group .gbody { padding: 0 0 1rem 2rem; }
+details.group .data h2 { margin-top: 1rem; }
+details.quietgroup .gtitle { font-weight: 400; color: var(--mid); }
+details.sub { margin-top: .8rem; }
+details.sub > summary { cursor: pointer; color: var(--mid); font-size: .88rem; }
+.rules .lead, .view > .lead { color: var(--mid); max-width: 70ch; margin: .5rem 0 1rem; }
+
+/* one rule: sentence left, importance right */
+.rule { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; padding: .55rem 0; border-bottom: 1px dotted var(--line); }
+.rule:last-child { border-bottom: 0; }
+.rule .rtext { flex: 1; line-height: 1.9; }
+.rule .rtext .hint { line-height: 1.4; margin: 0; }
+.rule .sub { margin-top: .2rem; }
+.rule .sub .row { margin: .1rem 0; }
+.levels { display: inline-flex; flex-shrink: 0; }
+.levels .lv { font: inherit; font-size: .75rem; background: #fff; color: var(--mid); border: 1px solid var(--line); margin-left: -1px; padding: .2rem .5rem; cursor: pointer; }
+.levels .lv:hover { color: var(--ink); border-color: var(--ink); position: relative; }
+.levels .lv.on { background: var(--ink); color: #fff; border-color: var(--ink); position: relative; }
+.always { font-size: .75rem; color: var(--mid); white-space: nowrap; padding-top: .25rem; }
+input.tiny { width: 3.6rem; }
+.daypick { display: inline-flex; margin: 0 .2rem; }
+.daypick .dp { border: 1px solid var(--line); margin-left: -1px; padding: .05rem .35rem; font-size: .75rem; cursor: pointer; color: var(--mid); line-height: 1.6; }
+.daypick .dp.on { background: var(--ink); color: #fff; border-color: var(--ink); position: relative; }
+.daypick input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+/* plan: action bar with one main button, status, and further options folded away */
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; margin: .6rem 0 1rem; }
+.status-line { color: var(--mid); font-size: .86rem; }
+.status-line a { color: inherit; }
+details.more { margin-left: auto; position: relative; }
+details.more > summary { cursor: pointer; font-size: .86rem; color: var(--mid); list-style: none; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more .more-body { position: absolute; right: 0; top: 1.8rem; z-index: 5; background: #fff; border: 1px solid var(--ink); padding: .8rem 1rem; display: grid; gap: .6rem; min-width: 22rem; font-size: .86rem; }
+.empty-state ol.steps { text-align: left; display: inline-block; color: var(--mid); }
+.print-only { display: none; }
+@media print { .print-only { display: block; } details.group { display: none; } }
+nav .tab.gap { margin-left: 1.4rem; padding-left: 1.4rem; border-left: 1px solid var(--line); }

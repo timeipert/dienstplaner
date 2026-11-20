@@ -20,7 +20,7 @@ Checked during the search: the late rule (duty ends after `lateRule.endAfter` â†
 at `lateRule.nextFrom` or later; also across the month border). Duties entered by hand and
 fixed duties are never changed, even if they break a rule; the analysis reports them.
 
-## Cost (weights in Setup â†’ Gewichtung)
+## Cost (weights: tab Regeln, importance level per rule; exact numbers under "Genaue Gewichte")
 
 | Term | Measure |
 | --- | --- |

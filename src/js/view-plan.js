@@ -2,11 +2,12 @@
 // hours per week, balance figures, warnings, print and export.
 import { h, openModal, toast, downloadFile, monthNav, confirmModal } from './ui-core.js';
 import { store, save } from './store.js';
-import { getPlan, dutyKey, STATUS, STEP, visibleRange, WEIGHT_DEFS, monthSettingsOf, personMonthOf, editMonthSettings } from './model.js';
+import { getPlan, dutyKey, STATUS, STEP, visibleRange, monthSettingsOf, personMonthOf, editMonthSettings } from './model.js';
 import { buildProblem, analyze, storedChoice } from './scheduler.js';
 import { buildReport, weightFor } from './report.js';
+import { importanceControl } from './view-rules.js';
 import { createSearch, openConstraints } from './search.js';
-import { planToCsv, planToIcs } from './exporters.js';
+import { planToCsv, planToIcs, planToXlsx } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
 const undoStack = []; // { key, json }
@@ -87,44 +88,77 @@ export function renderPlanView() {
       h('div', { class: 'tl-text' }, gaps.length ? h('span', { class: 'gaptext' }, gaps.map(([a, c]) => `${fmtMin(a)}–${fmtMin(c)} offen`).join(', ')) : ''));
   };
 
+  const hasPlan = Object.keys(plan.duties).length > 0;
+  const report = hasPlan ? buildReport(P, storedChoice(P)) : null;
+  const openRules = report ? openConstraints(report) : [];
+  const canUndo = undoStack.some((u) => u.key === key);
+  const statusText = !hasPlan ? 'noch kein Plan'
+    : openRules.length ? h('a', { href: '#regelpruefung', class: openRules.some((c) => c.status === 'bad') ? 'badtext' : '', onClick: (e) => { e.preventDefault(); openGroup('check'); } }, `${openRules.length} Regel(n) nicht ganz erfüllt`)
+      : 'alle Regeln erfüllt';
+
   return h('section', { class: 'view' },
     h('div', { class: 'toolbar' },
-      h('div', { class: 'row' },
-        monthNav(formatMonth(key), () => changeMonth(-1), () => changeMonth(1)),
-        h('div', { class: 'brushes noprint', role: 'radiogroup', 'aria-label': 'Ansicht' }, [['timeline', 'Zeitleiste'], ['calendar', 'Kalender']].map(([v, l]) => h('button', {
-          class: `btn ${(s.ui.planView || 'timeline') === v ? 'on' : ''}`, role: 'radio', 'aria-checked': String((s.ui.planView || 'timeline') === v),
-          onClick: () => { s.ui.planView = v; save(); store.render(); },
-        }, l)))),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Plan erstellen'),
-        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: genOptions.keepAll, onChange: (e) => { genOptions.keepAll = e.target.checked; } }), 'Bestehende Dienste behalten'),
-        h('select', { 'aria-label': 'Rechenzeit', onChange: (e) => { genOptions.time = Number(e.target.value); } },
-          TIME_OPTIONS.map(([v, l]) => h('option', { value: v, selected: v === genOptions.time }, l))),
-        h('button', { class: 'btn', onClick: () => undo(key), disabled: !undoStack.some((u) => u.key === key) }, 'Rückgängig'),
-        h('button', { class: 'btn', onClick: () => clearPlan(key) }, 'Leeren'),
-        h('button', { class: 'btn', onClick: () => window.print() }, 'Drucken'),
-        h('button', { class: 'btn', onClick: () => downloadFile(`dienstplan-${key}.csv`, planToCsv(s, P), 'text/csv') }, 'CSV'))),
-    h('div', { class: 'summary' },
-      h('label', { class: 'status' }, 'Status ', h('select', { onChange: (e) => { plan.status = e.target.value; save(); } }, Object.entries(STATUS).map(([v, l]) => h('option', { value: v, selected: plan.status === v }, l)))),
-      h('span', { class: 'sep' }, `Abgabe bis ${deadline}`),
-      h('span', { class: `sep ${A.messages.some((m) => m.level === 'bad') ? 'badtext' : ''}` }, A.messages.filter((m) => m.level === 'bad').length ? `${A.messages.filter((m) => m.level === 'bad').length} Probleme` : 'keine Regelverstöße'),
-      people.some((p) => p.active) ? null : h('span', { class: 'sep' }, 'Noch keine Personen angelegt.')),
+      monthNav(formatMonth(key), () => changeMonth(-1), () => changeMonth(1)),
+      hasPlan ? h('div', { class: 'brushes noprint', role: 'radiogroup', 'aria-label': 'Ansicht' }, [['timeline', 'Zeitleiste'], ['calendar', 'Kalender']].map(([v, l]) => h('button', {
+        class: `btn ${(s.ui.planView || 'timeline') === v ? 'on' : ''}`, role: 'radio', 'aria-checked': String((s.ui.planView || 'timeline') === v),
+        onClick: () => { s.ui.planView = v; save(); store.render(); },
+      }, l))) : null),
+    h('div', { class: 'actions noprint' },
+      h('button', { class: 'btn solid', onClick: () => runGeneration() }, hasPlan ? 'Neu erstellen' : 'Plan erstellen'),
+      canUndo ? h('button', { class: 'btn', onClick: () => undo(key) }, 'Rückgängig') : null,
+      hasPlan ? h('button', { class: 'btn', title: 'Excel-Datei im Aufbau der Kalenderansicht', onClick: () => downloadFile(`dienstplan-${key}.xlsx`, planToXlsx(s, P), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }, 'Excel') : null,
+      h('span', { class: 'status-line' }, `${STATUS[plan.status] || ''} · Abgabe bis ${deadline} · `, statusText),
+      h('details', { class: 'more' },
+        h('summary', {}, 'Weitere Optionen'),
+        h('div', { class: 'more-body' },
+          h('label', {}, 'Rechenzeit ', h('select', { onChange: (e) => { genOptions.time = Number(e.target.value); } },
+            TIME_OPTIONS.map(([v, l]) => h('option', { value: v, selected: v === genOptions.time }, l)))),
+          h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: genOptions.keepAll, onChange: (e) => { genOptions.keepAll = e.target.checked; } }), 'Beim Erstellen bestehende Dienste behalten'),
+          h('label', {}, 'Status ', h('select', { onChange: (e) => { plan.status = e.target.value; save(); store.render(); } }, Object.entries(STATUS).map(([v, l]) => h('option', { value: v, selected: plan.status === v }, l)))),
+          hasPlan ? h('div', { class: 'row' },
+            h('button', { class: 'btn', onClick: () => window.print() }, 'Drucken'),
+            h('button', { class: 'btn', onClick: () => downloadFile(`dienstplan-${key}.csv`, planToCsv(s, P), 'text/csv') }, 'CSV-Datei'),
+            h('button', { class: 'btn quiet', onClick: () => clearPlan(key) }, 'Plan leeren')) : null))),
+    people.some((p) => p.active) ? null : h('p', { class: 'hint' }, 'Noch keine Personen angelegt (Reiter „Personen“).'),
+    report ? renderRuleCheck(s, P, key, report, openRules, A) : null,
     renderMonthSettings(s, key),
-    renderRuleCheck(s, P, key),
     h('p', { class: 'print-title' }, `${cfg.title} – ${formatMonth(key)}${plan.status !== 'final' ? ' (Entwurf)' : ''}`),
-    s.ui.planView === 'calendar' ? renderCalendar(P, A, plan) : [
-      h('div', { class: 'legend noprint' },
-        h('span', {}, h('i', { class: 'lg-bar' }), 'Dienst'),
-        h('span', {}, h('i', { class: 'lg-req' }), 'benötigte Besetzung'),
-        h('span', {}, h('i', { class: 'lg-gap' }), 'Lücke'),
-        h('span', {}, h('i', { class: 'lg-appt' }), 'Termin'),
-        h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht'),
-        h('span', {}, h('i', { class: 'lg-rather' }), 'eher nicht')),
-      h('div', { class: 'timeline', style: `--hours:${(v1 - v0) / 60}` },
-        h('div', { class: 'tl-day head' }, h('div', { class: 'tl-date' }), h('div', { class: 'tl-body' }, scale), h('div', { class: 'tl-text' })),
-        P.days.map(dayRow))],
-    renderStats(s, P, A, key),
-    renderMessages(A));
+    !hasPlan ? h('div', { class: 'empty-state' },
+      h('p', {}, `Für ${formatMonth(key)} gibt es noch keinen Plan.`),
+      h('ol', { class: 'steps' },
+        h('li', {}, 'Unter „Wünsche“ eintragen, wer wann nicht kann.'),
+        h('li', {}, 'Unter „Termine“ die Einzeltermine des Monats eintragen.'),
+        h('li', {}, '„Plan erstellen“ drücken und danach von Hand nachbessern (auf einen Dienst klicken).')))
+      : s.ui.planView === 'calendar' ? renderCalendar(P, A, plan) : [
+        h('div', { class: 'legend noprint' },
+          h('span', {}, h('i', { class: 'lg-bar' }), 'Dienst'),
+          h('span', {}, h('i', { class: 'lg-req' }), 'benötigte Besetzung'),
+          h('span', {}, h('i', { class: 'lg-gap' }), 'Lücke'),
+          h('span', {}, h('i', { class: 'lg-appt' }), 'Termin'),
+          h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht'),
+          h('span', {}, h('i', { class: 'lg-rather' }), 'eher nicht')),
+        h('div', { class: 'timeline', style: `--hours:${(v1 - v0) / 60}` },
+          h('div', { class: 'tl-day head' }, h('div', { class: 'tl-date' }), h('div', { class: 'tl-body' }, scale), h('div', { class: 'tl-text' })),
+          P.days.map(dayRow))],
+    hasPlan ? renderStats(s, P, A, key) : null);
+}
+
+/** Collapsible section of the plan view; open state is kept in ui.planOpen. */
+function section(id, title, summary, body, cls = '') {
+  const s = store.state;
+  if (!s.ui.planOpen) s.ui.planOpen = {};
+  return h('details', { class: `group ${cls}`, id: `sec-${id}`, open: s.ui.planOpen[id] ? true : null, onToggle: (e) => { s.ui.planOpen[id] = e.target.open; save(); } },
+    h('summary', {}, h('span', { class: 'gtitle' }, title), h('span', { class: 'gsum' }, summary)),
+    h('div', { class: 'gbody' }, body()));
+}
+
+function openGroup(id) {
+  const s = store.state;
+  if (!s.ui.planOpen) s.ui.planOpen = {};
+  s.ui.planOpen[id] = true;
+  save();
+  store.render();
+  document.getElementById(`sec-${id}`)?.scrollIntoView({ block: 'start' });
 }
 
 /** ISO calendar week number of a date string. */
@@ -197,36 +231,22 @@ function renderStats(s, P, A, key) {
     const ds = P.weekDays[w];
     return `${P.days[ds[0]].date.slice(8).replace(/^0/, '')}.–${P.days[ds[ds.length - 1]].date.slice(8).replace(/^0/, '')}.`;
   };
-  const balName = s.config.balanceWeekdays.map((d) => WEEKDAYS_SHORT[d]).join('/') || '–';
-  return h('div', { class: 'stats' },
-    h('h2', {}, 'Stunden je Woche (Ist / Soll)'),
+  const table = () => [
     h('div', { class: 'tablewrap' }, h('table', { class: 'grid hours' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Person'), P.weekKeys.map((_, w) => h('th', {}, weekLabel(w))), h('th', {}, 'Monat'))),
+      h('thead', {}, h('tr', {}, h('th', {}, 'Person'), P.weekKeys.map((_, w) => h('th', {}, weekLabel(w))), h('th', {}, 'Monat'), h('th', { class: 'noprint' }, ''))),
       h('tbody', {}, active.map((r) => h('tr', {},
         h('td', {}, r.person.name),
         r.weeks.map((wk) => {
           const diff = wk.worked - wk.target;
           return h('td', { class: Math.abs(diff) >= 1 ? 'off' : '' }, `${fmtHours(wk.worked)} / ${fmtHours(wk.target)}`, Math.abs(diff) >= 1 ? h('small', {}, ` ${diff > 0 ? '+' : ''}${fmtHours(diff)}`) : null);
         }),
-        h('td', {}, h('strong', {}, `${fmtHours(r.worked)} / ${fmtHours(r.target)}`))))))),
-    h('h2', { class: 'noprint' }, 'Ausgleich'),
-    h('table', { class: 'grid noprint' },
-      h('thead', {}, h('tr', {}, ['Person', `${balName}-Dienste (mit Vormonaten)`, 'Wochenenddienste', 'Nur-Termin-Dienste', 'Folgetage', ''].map((x) => h('th', {}, x)))),
-      h('tbody', {}, active.map((r) => h('tr', {},
-        h('td', {}, r.person.name),
-        h('td', {}, `${r.balance - r.hist} (${r.balance})`),
-        h('td', {}, String(r.weekend)),
-        h('td', {}, String(r.apptOnly)),
-        h('td', {}, String(r.consecutive)),
-        h('td', {}, r.worked ? h('button', { class: 'btn quiet', onClick: () => downloadFile(`${r.person.name}-${key}.ics`, planToIcs(s, P, r.person.id), 'text/calendar') }, 'Kalender (.ics)') : ''))))),
-    A.pairStats.length ? h('p', { class: 'hint noprint' }, 'Gemeinsame Stunden: ', A.pairStats.map((x) => `${x.a} + ${x.b}: ${fmtHours(x.hours)} h`).join(' · ')) : null);
-}
-
-function renderMessages(A) {
-  if (!A.messages.length) return h('div', { class: 'noprint' });
-  return h('div', { class: 'messages noprint' },
-    h('h2', {}, 'Hinweise'),
-    h('ul', {}, A.messages.slice(0, 80).map((m) => h('li', { class: m.level }, h('b', {}, m.level === 'bad' ? 'Problem: ' : 'Hinweis: '), m.text))));
+        h('td', {}, h('strong', {}, `${fmtHours(r.worked)} / ${fmtHours(r.target)}`)),
+        h('td', { class: 'noprint' }, r.worked ? h('button', { class: 'btn quiet', title: 'Kalenderdatei dieser Person zum Verschicken', onClick: () => downloadFile(`${r.person.name}-${key}.ics`, planToIcs(s, P, r.person.id), 'text/calendar') }, 'Kalenderdatei') : '')))))),
+    h('p', { class: 'hint noprint' }, 'Ist / Soll in Stunden. Fairness, Wochenenden und wer mit wem arbeitet: Reiter „Auswertung“.')];
+  return h('div', { class: 'stats' },
+    h('h2', { class: 'print-only' }, 'Stunden je Woche (Ist / Soll)'),
+    h('div', { class: 'print-only' }, table()),
+    h('div', { class: 'noprint' }, section('hours', 'Stunden', active.map((r) => `${r.person.name} ${fmtHours(r.worked)} / ${fmtHours(r.target)}`).join(' · '), table)));
 }
 
 function changeMonth(d) {
@@ -352,7 +372,6 @@ async function runGeneration() {
 function renderMonthSettings(s, key) {
   const ms = monthSettingsOf(s, key);
   const people = s.people.filter((p) => p.active);
-  const changed = ms.noMorning || people.some((p) => { const pm = personMonthOf(ms, p.id); return pm.noMorning || pm.noWishes || pm.hours !== ''; });
   const setGlobal = (f, v) => { editMonthSettings(s, key)[f] = v; save(); store.render(); };
   const setPerson = (pid, f, v) => {
     const m = editMonthSettings(s, key);
@@ -360,8 +379,14 @@ function renderMonthSettings(s, key) {
     save();
     store.render();
   };
-  return h('details', { class: 'card monthset noprint', open: changed ? true : null },
-    h('summary', {}, `Einstellungen nur für ${formatMonth(key)}`, changed ? h('span', { class: 'hint' }, ' – aktiv') : null),
+  const active = [];
+  if (ms.noMorning) active.push(`keine Vormittagsdienste (vor ${ms.morningUntil})`);
+  for (const p of people) {
+    const pm = personMonthOf(ms, p.id);
+    const bits = [ms.noMorning || !pm.noMorning ? '' : 'keine Vormittage', pm.noWishes ? 'Wochenwünsche aus' : '', pm.hours !== '' ? `${fmtHours(pm.hours)} Std./Woche` : ''].filter(Boolean);
+    if (bits.length) active.push(`${p.name}: ${bits.join(', ')}`);
+  }
+  return h('div', { class: 'noprint' }, section('month', `Nur für ${formatMonth(key)}`, active.length ? active.join(' · ') : 'keine Abweichungen (z. B. ein Monat ohne Vormittagsdienste)', () => [
     h('p', { class: 'hint' }, 'Gilt nur in diesem Monat und ändert die Personen nicht dauerhaft. Termine (z. B. ein Hilfeplangespräch am Vormittag) finden trotzdem statt.'),
     h('div', { class: 'row wrap' },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: ms.noMorning, onChange: (e) => setGlobal('noMorning', e.target.checked) }), 'Keine Vormittagsdienste für alle'),
@@ -376,41 +401,34 @@ function renderMonthSettings(s, key) {
           h('td', {}, (p.weeklyWishes || []).length ? h('input', { type: 'checkbox', 'aria-label': `${p.name}: wöchentliche Wünsche aussetzen`, checked: pm.noWishes, onChange: (e) => setPerson(p.id, 'noWishes', e.target.checked) }) : h('span', { class: 'hint' }, 'keine')),
           h('td', {}, h('input', { type: 'number', class: 'narrow', min: '0', max: '60', step: '0.5', placeholder: String(p.weeklyHours), value: pm.hours, 'aria-label': `${p.name}: Wochenstunden in diesem Monat`, onChange: (e) => setPerson(p.id, 'hours', e.target.value === '' ? '' : Number(e.target.value)) }),
             h('span', { class: 'hint' }, ` sonst ${fmtHours(p.weeklyHours)}`)));
-      }))) : null);
+      }))) : null]));
 }
 
 /**
- * Rule check of the stored plan: rules that are not fully met, with their weight for a new
- * generation, and rules that no plan can meet completely (lower bounds).
+ * Rule check of the stored plan: rules that are not fully met, each with its importance for the
+ * next generation; then (collapsed) what no plan can avoid and the single problem spots.
  */
-function renderRuleCheck(s, P0, key) {
-  if (!Object.keys(getPlan(s, key).duties).length) return null;
-  const report = buildReport(P0, storedChoice(P0));
-  const open = openConstraints(report);
-  const labels = Object.fromEntries(WEIGHT_DEFS.map(([k, l]) => [k, l]));
-  const w = s.config.weights;
+function renderRuleCheck(s, P0, key, report, open, A) {
   const run = lastRun && lastRun.key === key ? lastRun : null;
   const runText = run ? `Letzte Berechnung: ${run.runs} Durchläufe in ${Math.round(run.spent / 1000)} s, ${run.reason === 'met' ? 'beendet, weil alle Regeln erfüllt sind' : run.reason === 'timeout' ? 'beendet, weil die Zeit abgelaufen ist' : run.reason === 'stopped' ? 'von Hand beendet' : 'ein Durchlauf'}.` : '';
-  return h('details', { class: 'card rulecheck noprint', open: open.length ? true : null },
-    h('summary', {}, 'Regelprüfung: ', open.length ? h('span', { class: open.some((c) => c.status === 'bad') ? 'badtext' : '' }, `${open.length} Regel(n) nicht ganz erfüllt`) : 'alle Regeln erfüllt', ` (${report.summary.ok} von ${report.summary.total} erfüllt)`),
-    runText ? h('p', { class: 'hint' }, runText) : null,
+  const short = (c) => c.label.replace(/ \(.*\)$/, '');
+  const summary = open.length ? [h('span', { class: open.some((c) => c.status === 'bad') ? 'badtext' : '' }, `${open.length} nicht ganz erfüllt`), `: ${open.map(short).join(', ')}`] : `alle ${report.summary.total} Regeln erfüllt`;
+  const msgs = A.messages;
+  return section('check', 'Regelprüfung', summary, () => [
     open.length ? [
-      h('p', { class: 'hint' }, 'Nicht alle Regeln lassen sich immer gleichzeitig erfüllen. Höheres Gewicht = diese Regel wird beim nächsten Erstellen wichtiger genommen (andere geben dafür eher nach). Harte Regeln hängen an den Einträgen (Wünsche, Termine) und werden nie zugunsten anderer gebrochen.'),
-      h('table', { class: 'grid' },
-        h('thead', {}, h('tr', {}, ['Regel', 'Stand', 'Gewicht', ''].map((x) => h('th', {}, x)))),
-        h('tbody', {}, open.map((c) => {
-          const k = weightFor(c.id);
-          return h('tr', {},
-            h('td', {}, h('span', { class: c.status === 'bad' ? 'badtext' : '' }, c.label), c.detail ? h('div', { class: 'hint' }, c.detail) : null),
-            h('td', { class: 'nowrap' }, c.total != null ? `${c.met} / ${c.total}` : c.status === 'bad' ? 'deutlich ungleich' : 'etwas ungleich'),
-            h('td', { class: 'nowrap' }, k ? [
-              h('input', { type: 'number', class: 'narrow', min: '0', value: w[k], title: labels[k], 'aria-label': `Gewicht: ${labels[k]}`, onChange: (e) => { w[k] = Number(e.target.value) || 0; save(); } }),
-              h('button', { class: 'btn quiet', title: 'Gewicht verdoppeln', onClick: () => { w[k] = Math.max(1, w[k] * 2); save(); store.render(); } }, '×2')]
-              : h('span', { class: 'hint' }, c.group === 'hart' ? 'hart: Einträge prüfen' : '–')),
-            h('td', { class: 'hint' }, k ? labels[k] : ''));
-        }))),
-      h('div', { class: 'row' }, h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Mit diesen Gewichten neu erstellen'),
-        h('span', { class: 'hint' }, 'Alle Gewichte: Einrichtung → Gewichtung.'))] : null,
-    report.hints.length ? [h('h3', {}, 'Nicht vollständig erfüllbar'), h('p', { class: 'hint' }, 'Abweichungen, die kein Plan vermeiden kann (sie zählen in der Prüfung nicht als Verstoß), und Vorschläge für die Einstellungen.'),
-      h('ul', { class: 'notes' }, report.hints.map((t) => h('li', {}, t)))] : null);
+      h('p', { class: 'hint' }, 'Nicht alles lässt sich immer gleichzeitig erfüllen. Wird eine Regel wichtiger gestellt, geben beim nächsten Erstellen andere eher nach.'),
+      h('div', { class: 'rulelist' }, open.map((c) => {
+        const k = weightFor(c.id);
+        return h('div', { class: 'rule' },
+          h('div', { class: 'rtext' }, h('span', { class: c.status === 'bad' ? 'badtext' : '' }, short(c)),
+            h('div', { class: 'hint' }, [c.total != null ? `${c.met} von ${c.total} ${c.unit}` : '', c.detail].filter(Boolean).join(' · '))),
+          k ? importanceControl(k) : h('span', { class: 'always' }, c.group === 'hart' ? 'gilt immer – Einträge prüfen' : ''));
+      })),
+      h('div', { class: 'row' }, h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Neu erstellen'), runText ? h('span', { class: 'hint' }, runText) : null)]
+      : runText ? h('p', { class: 'hint' }, runText) : null,
+    report.hints.length ? h('details', { class: 'sub' }, h('summary', {}, `Nicht vermeidbar (${report.hints.length})`),
+      h('p', { class: 'hint' }, 'Abweichungen, die kein Plan vermeiden kann (zählen nicht als Verstoß), und Vorschläge für die Einstellungen.'),
+      h('ul', { class: 'notes' }, report.hints.map((t) => h('li', {}, t)))) : null,
+    msgs.length ? h('details', { class: 'sub' }, h('summary', {}, `Einzelne Stellen im Plan (${msgs.length})`),
+      h('ul', { class: 'notes' }, msgs.slice(0, 80).map((m) => h('li', { class: m.level }, m.text)))) : null]);
 }

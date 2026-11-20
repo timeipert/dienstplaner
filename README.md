@@ -42,8 +42,26 @@ issues ("rather not", "maybe") are only dotted-underlined in red. Everything els
 - A Content-Security-Policy in `src/index.html` (`default-src 'none'`, `connect-src 'none'`) makes
   the browser refuse any network request. No analytics, no external fonts or scripts. GitHub
   Pages only serves the program file; it never receives data.
-- Data is lost when browser data is cleared or the device changes: tab "Daten" downloads a JSON
+- Data is lost when browser data is cleared or the device changes: tab "Einstellungen" → "Daten und Datenschutz" downloads a JSON
   backup (contains real names, keep it safe; `.gitignore` excludes such files).
+
+## Screen layout (state 2026-11-20, version 0.4.0)
+
+The interface shows the essentials first and folds details away:
+
+- Tabs in the order of the monthly work: **Plan · Wünsche · Termine · Auswertung**, then the
+  tabs that change rarely: **Personen · Regeln · Einstellungen**.
+- **Plan:** month, one main button ("Plan erstellen" / "Neu erstellen"), "Excel", a status line
+  (status, deadline, number of unmet rules) and "Weitere Optionen" (computing time, keep existing
+  duties, status, print, CSV, clear). Below: collapsible sections, each a single line with a
+  summary until opened: "Regelprüfung" (rule check), "Nur für <Monat>" (month settings),
+  the plan itself, "Stunden" (hours per week).
+- **Regeln:** every rule as one sentence in five collapsed groups (Besetzung, Arbeitszeit,
+  Wochenende, Wünsche und Rhythmus, Ausgleich). Each rule has an importance level
+  "aus · wenig · normal · wichtig · sehr wichtig" (weight = default weight × 0 / 0.3 / 1 / 3 / 10)
+  or "gilt immer" for hard rules. Exact weights: group "Genaue Gewichte".
+- **Einstellungen:** duty times per weekday, closed days, general settings, data and privacy
+  (backup, templates, erase).
 
 ## Monthly workflow
 
@@ -77,7 +95,7 @@ following month by default.
      letter marks an appointment, the last column shows worked / target hours of the week.
    Status "Wünsche sammeln → Entwurf → Abgeschlossen".
 5. **Auswertung:** shows how well the plan meets every rule and how fair it is (see below).
-6. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
+6. Exports: button "Excel" (an .xlsx file laid out like the calendar view: columns Mon–Sun, one block per week with one row per person, duty times as text, weekly hours in the last column, rule violations red), print (A4 landscape), CSV and print under "Weitere Optionen", calendar file (.ics) per person in the section "Stunden".
 
 ## Evaluation tab ("Auswertung")
 
@@ -106,34 +124,34 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | Appointment-only duty | A duty that consists only of the appointment (shorter than the person's minimum length); limited per month. |
 | Wish string | 48 characters per day, one per half hour: `.` none, `x` cannot, `-` rather not (soft), `+` wants, `o` can (exception). |
 | Weekly wish | Per person: on n days per week a duty that starts inside a window (for example 10:00–13:00 = morning). Soft; only for weeks with at least 3 possible workdays. |
-| Alignment | Setup: duties of the same day and the same group (morning = starts before 13:00, afternoon) should start together, end together, either, or both. Soft. |
+| Alignment | Regeln → Ausgleich: duties of the same day and the same group (morning = starts before 13:00, afternoon) should start together, end together, either, or both. Soft. |
 | Balance weekdays | Weekdays (default Friday) whose duties are spread evenly across persons, including previous months. |
 | Late rule | After a duty ending after 20:30 the next day's duty starts at 13:00 at the earliest (configurable). |
-| Normal span | 10:00–21:00 (Setup → duty times per weekday and display range). Duties entered by hand and appointments may lie outside (for example from 07:30); the views widen automatically and mark such duties. The generator plans only inside the duty times of the weekday, except to include an appointment. |
+| Normal span | 10:00–21:00 (Einstellungen → duty times per weekday and display range). Duties entered by hand and appointments may lie outside (for example from 07:30); the views widen automatically and mark such duties. The generator plans only inside the duty times of the weekday, except to include an appointment. |
 
 ## How the first team's requirements are represented (state 2026-11-20)
 
 | Requirement | Setting |
 | --- | --- |
-| Mon–Fri 14:00–20:00 someone present | Setup → coverage |
-| Once a week someone until 21:00 | Setup → weekly coverage 20:00–21:00, 1 day |
+| Mon–Fri 14:00–20:00 someone present | Regeln → coverage |
+| Once a week someone until 21:00 | Regeln → weekly coverage 20:00–21:00, 1 day |
 | J1, J2: 15 h/week as 3 × 5 h, ideally Mon/Wed/Fri, not on consecutive days | People: 15 h, length 5–5, preferred days, "avoid consecutive" |
 | N: 25 h/week, 6-hour duties preferred | People: 25 h, length 5–6, preferred 6 |
 | One person: Wednesday from 16:30, Friday until 18:00 | Wishes → weekly pattern (preset example on J2) |
-| No morning duties on Wednesday | Setup → duty times Wednesday from 12:00 |
-| Fridays balanced per month and across months | Setup → balance weekdays Friday, 3 months of history |
-| Everybody one 3-hour weekend duty per month, preferably ending by 20:00; counts as working time | Setup → weekend |
-| At most one weekend per month without any duty | Setup → weekend, "at most 1" |
+| No morning duties on Wednesday | Einstellungen → duty times Wednesday from 12:00 |
+| Fridays balanced per month and across months | Regeln → balance weekdays Friday, 3 months of history |
+| Everybody one 3-hour weekend duty per month, preferably ending by 20:00; counts as working time | Regeln → weekend |
+| At most one weekend per month without any duty | Regeln → weekend, "at most 1" |
 | Tuesday 14:00–15:30 team meeting, everyone, inside the duty | Termine → weekly appointment |
-| Coming in only for the meeting at most once a month | Setup → appointment-only duties ≤ 1 |
+| Coming in only for the meeting at most once a month | Regeln → appointment-only duties ≤ 1 |
 | Case conference in the morning, varying persons, one block with the duty | Termine → one-off appointment |
 | Shared working time balanced between all persons | Weight "shared time" |
 | "Cannot work" wishes are hard (override only after talking to the person: edit by hand) | Wishes → "Kann nicht" |
 | Whole days impossible | Wishes → day chips |
 | Once a week a morning duty (per person) | Wishes → weekly wish |
 | "Rather not on Friday until 21:00" | Wishes → brush "Eher nicht" in the weekly pattern |
-| Morning or afternoon duties start / end at the same time | Setup → simultaneous start or end |
-| After a duty until 21:00 no start before 13:00 next day | Setup → late rule |
+| Morning or afternoon duties start / end at the same time | Regeln → simultaneous start or end |
+| After a duty until 21:00 no start before 13:00 next day | Regeln → late rule |
 | No morning duties in a given month (for everybody or one person) | Plan → month settings |
 | No duty on the day before and the day after a vacation, so the time off is as long as possible | Wishes → absences; weight "day before or after an absence" (soft) |
 | Rules that cannot all be met at once: search longer, then weight them | Plan → computing time "bis alle Regeln erfüllt"; Regelprüfung → weights |
@@ -146,11 +164,14 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `src/js/scheduler.js` | Candidate duties, cost function, optimizer, analysis. Authoritative for rule semantics. |
 | `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
 | `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met. |
-| `src/js/exporters.js` | CSV and iCalendar text. |
+| `src/js/exporters.js` | CSV, iCalendar and Excel export (calendar layout). |
+| `src/js/xlsx.js` | Minimal .xlsx writer (ZIP without compression, one sheet, styles); no library. |
+| `src/js/view-rules.js` | Rules tab: rules as sentences, importance levels. |
 | `src/js/store.js` | localStorage persistence. |
 | `src/js/view-*.js`, `app.js`, `ui-core.js` | UI (plan timeline, wishes grid, appointments, people, setup, data). |
 | `build.mjs` | Concatenates the modules into `dist/dienstplaner.html`; fails on duplicate top-level names. |
 | `tests/scheduler.test.mjs` | Scenario tests (the first team's rules). |
+| `tests/xlsx.test.mjs` | ZIP writer and Excel export. |
 | `tests/month-search.test.mjs` | Month settings, vacation edges, lower bounds, time-limited search. |
 | `docs/generator.md` | How the generator works. |
 
