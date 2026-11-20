@@ -102,7 +102,7 @@ export function renderPlanView() {
     h('div', { class: 'summary' },
       h('label', { class: 'status' }, 'Status ', h('select', { onChange: (e) => { plan.status = e.target.value; save(); } }, Object.entries(STATUS).map(([v, l]) => h('option', { value: v, selected: plan.status === v }, l)))),
       h('span', { class: 'sep' }, `Abgabe bis ${deadline}`),
-      h('span', { class: 'sep' }, A.messages.filter((m) => m.level === 'bad').length ? `${A.messages.filter((m) => m.level === 'bad').length} Probleme` : 'keine Regelverstöße'),
+      h('span', { class: `sep ${A.messages.some((m) => m.level === 'bad') ? 'badtext' : ''}` }, A.messages.filter((m) => m.level === 'bad').length ? `${A.messages.filter((m) => m.level === 'bad').length} Probleme` : 'keine Regelverstöße'),
       people.some((p) => p.active) ? null : h('span', { class: 'sep' }, 'Noch keine Personen angelegt.')),
     h('p', { class: 'print-title' }, `${cfg.title} – ${formatMonth(key)}${plan.status !== 'final' ? ' (Entwurf)' : ''}`),
     s.ui.planView === 'calendar' ? renderCalendar(P, A, plan) : [

@@ -89,7 +89,7 @@ export function renderReportView() {
     h('div', { class: 'scorecard' },
       h('div', {}, h('strong', {}, `${sm.ok} von ${sm.total}`), h('span', {}, 'Regeln erfüllt')),
       h('div', {}, h('strong', {}, String(sm.warn)), h('span', {}, 'teilweise')),
-      h('div', {}, h('strong', {}, String(sm.bad)), h('span', {}, 'verletzt'))),
+      h('div', {}, h('strong', { class: sm.bad ? 'badtext' : '' }, String(sm.bad)), h('span', {}, 'verletzt'))),
     h('h2', {}, 'Regeln und wie gut der Plan sie erfüllt'),
     h('p', { class: 'hint' }, '● erfüllt  ◐ teilweise (mindestens 90 %)  ○ verletzt oder deutlich verfehlt  – kommt in diesem Monat nicht vor. „Immer einzuhalten“ darf nie verletzt sein.'),
     h('div', { class: 'tablewrap' }, table),

@@ -274,3 +274,31 @@ tr.range td { color: var(--mid); border-top: 1px solid var(--ink); }
   table.cal { font-size: 8pt; }
   table.cal td.we, tr.cal-date td.out, tr.cal-person td.out { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------------------------------------------------------------------------------------
+   Constraint colors. Red is the ONLY color in the app and means: a rule is violated or a
+   required time is not covered. Everything else stays black, white and grey. */
+:root { --bad: #c1121f; --bad-wash: #fdeaea; }
+.badtext { color: var(--bad); font-weight: 600; }
+/* timeline */
+.lane .bar.bad { background: var(--bad); color: #fff; border: 0; font-weight: 600; }
+.lane .miss.bad { color: var(--bad); }
+.need .gap { height: 6px; background: repeating-linear-gradient(135deg, #fff 0 2px, var(--bad) 2px 3px); }
+.lg-gap { background: repeating-linear-gradient(135deg, #fff 0 2px, var(--bad) 2px 3px); border-color: var(--bad) !important; }
+.gaptext { color: var(--bad); }
+.messages li.bad b, .messages li.bad { color: var(--bad); text-decoration: none; }
+.notes li.bad { color: var(--bad); }
+/* calendar */
+table.cal td.cell.bad { background: var(--bad-wash); color: var(--bad); font-weight: 700; outline: 2px solid var(--bad); outline-offset: -3px; }
+table.cal td.cell.bad:hover { background: #f9d3d3; }
+table.cal td.cell.warn { text-decoration: underline dotted var(--bad); text-underline-offset: 3px; }
+.lg-badcell { background: var(--bad-wash); outline: 1.5px solid var(--bad); outline-offset: -2px; }
+/* report */
+table.report tr.st-bad td.mark, table.report tr.st-bad td:nth-child(3) { color: var(--bad); }
+table.report tr.st-bad td { font-weight: 600; }
+table.report tr.st-bad .fillbar { border-color: var(--bad); }
+table.report tr.st-bad .fillbar i { background: var(--bad); }
+table.report tr.st-warn td.mark { color: var(--bad); }
+@media print {
+  .lane .bar.bad, .need .gap, table.cal td.cell.bad { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

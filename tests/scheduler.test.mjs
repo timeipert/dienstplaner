@@ -205,3 +205,12 @@ test('same-day alignment: "start together" reduces start-time spread among morni
   assert.ok(start <= none, `start ${start} vs none ${none}`);
   assert.ok(start <= 12, `spread with "start" is ${start}`);
 });
+
+test('analysis: an appointment inside a "cannot work" time is flagged as a problem', () => {
+  const s = scenario();
+  const j1 = s.people.find((p) => p.name === 'J1');
+  s.availability[KEY] = { [j1.id]: { '2026-12-01': blockString(14 * 60, 15 * 60) } }; // Tuesday meeting 14:00–15:30
+  const P = buildProblem(s, KEY, { keep: 'all' });
+  const a = analyze(P, storedChoice(P));
+  assert.ok(a.messages.some((m) => m.level === 'bad' && m.text.includes('J1') && m.text.includes('gesperrter Zeit')));
+});

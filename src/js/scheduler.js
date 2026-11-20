@@ -573,6 +573,11 @@ export function analyze(P, choice) {
         if (!person.active) dutyIssues[p][d].push({ level: 'warn', text: 'Person ist archiviert' });
       }
       for (const a of ap) {
+        if (blocked(P.av[p][d], a.from, a.to)) {
+          // no valid duty can exist: the appointment itself lies in a time the person cannot work
+          dutyIssues[p][d].push({ level: 'bad', text: `Termin „${a.title}“ ${fmtMin(a.from)}–${fmtMin(a.to)} liegt in einer Zeit, in der die Person nicht kann` });
+          messages.push({ level: 'bad', d, text: `${person.name}, ${formatDay(day.date)}: Termin „${a.title}“ liegt in gesperrter Zeit („kann nicht“)` });
+        }
         if (!du || du.from > a.from || du.to < a.to) {
           dutyIssues[p][d].push({ level: 'bad', text: `Termin „${a.title}“ ${fmtMin(a.from)}–${fmtMin(a.to)} nicht im Dienst` });
           messages.push({ level: 'bad', d, text: `${person.name}, ${formatDay(day.date)}: Termin „${a.title}“ nicht im Dienst enthalten` });

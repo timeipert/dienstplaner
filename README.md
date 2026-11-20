@@ -28,6 +28,14 @@ works when opened directly from disk.
 Deploy: pushing to `main` runs `.github/workflows/pages.yml` (tests, build, publish to Pages).
 In the repository settings, Pages → Source must be "GitHub Actions".
 
+## Colors
+
+The design is black, white and grey. **Red is the only color and appears only for rule
+violations** (`--bad` in `src/styles.css`): cells and bars of duties that break a hard rule (for
+example an appointment that the duty does not contain, or an appointment inside a time the person
+cannot work), uncovered required times (hatched), and violated rules in the evaluation. Soft
+issues ("rather not", "maybe") are only dotted-underlined in red. Everything else is never colored.
+
 ## Privacy model
 
 - Data lives only in `localStorage` (key `dienstplaner.v1`) of the browser that is used for planning.
