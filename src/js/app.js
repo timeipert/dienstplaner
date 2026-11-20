@@ -8,9 +8,11 @@ import { renderPeopleView } from './view-people.js';
 import { renderSetupView } from './view-setup.js';
 import { renderDataView } from './view-data.js';
 import { renderApptView } from './view-appts.js';
+import { renderReportView } from './view-report.js';
 
 const TABS = [
   ['plan', 'Plan', renderPlanView],
+  ['report', 'Auswertung', renderReportView],
   ['avail', 'Wünsche', renderAvailView],
   ['appts', 'Termine', renderApptView],
   ['people', 'Personen', renderPeopleView],

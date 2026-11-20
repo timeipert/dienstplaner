@@ -54,7 +54,24 @@ following month by default.
      row per person; cells show the duty times as numbers (for example `14–19`), a superscript
      letter marks an appointment, the last column shows worked / target hours of the week.
    Status "Wünsche sammeln → Entwurf → Abgeschlossen".
-4. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
+4. **Auswertung:** shows how well the plan meets every rule and how fair it is (see below).
+5. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
+
+## Evaluation tab ("Auswertung")
+
+Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/js/view-report.js` (view).
+
+- **Rule report:** every rule with result (● met, ◐ partly = at least 90 %, ○ violated, – not
+  applicable) and "met of total" (for example 15 of 15 appointments covered, 138 of 138 coverage
+  person-hours). Three groups: always to keep (hard: cannot-work hours, appointments, duty times,
+  late rule), goals and wishes (coverage, weekly hours, weekend duty, rather-not, weekly wishes,
+  preferred weekdays, alignment, lengths, …), balance between persons (contract hours, Fridays
+  with previous months, weekend duties, late duties, shared time). A score card sums up the counts.
+- **Distribution per person:** duties, hours actual / target, contract fulfilment, average length,
+  morning duties, late duties, balance weekdays (month / total), weekend duties, consecutive days,
+  appointment-only duties; highest value underlined, lowest in italics, last row shows the range.
+- **Who works with whom:** matrix with shared hours and number of days per pair.
+- **Duties per weekday** per person (balance weekdays highlighted).
 
 ## Glossary
 
@@ -102,6 +119,7 @@ following month by default.
 | --- | --- |
 | `src/js/model.js` | State shape (schema 2), defaults, presets. |
 | `src/js/scheduler.js` | Candidate duties, cost function, optimizer, analysis. Authoritative for rule semantics. |
+| `src/js/report.js` | Evaluation of a plan: rule report, fairness figures, pairs. |
 | `src/js/exporters.js` | CSV and iCalendar text. |
 | `src/js/store.js` | localStorage persistence. |
 | `src/js/view-*.js`, `app.js`, `ui-core.js` | UI (plan timeline, wishes grid, appointments, people, setup, data). |

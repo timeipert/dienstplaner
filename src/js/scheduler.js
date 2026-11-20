@@ -169,7 +169,7 @@ export function buildProblem(state, key, opts = {}) {
 // ---------------------------------------------------------------------------------------
 // Cost functions on a choice matrix
 
-function makeEval(P, choice) {
+export function makeEval(P, choice) {
   const { cfg, W, days, people, cand, need } = P;
   const late = cfg.lateRule;
   const lateEnd = minutesOf(late.endAfter);
