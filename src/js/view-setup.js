@@ -74,6 +74,14 @@ export function renderSetupView() {
     h('div', { class: 'row' }, h('span', { class: 'lbl' }, 'Gleichmäßig verteilen:'), dayChecks(c, 'balanceWeekdays')),
     h('p', { class: 'hint' }, 'Dienste an diesen Wochentagen (z. B. Freitag) werden über die Personen gleich verteilt, auch über die Vormonate.'));
 
+  const align = h('div', { class: 'card' },
+    h('h2', {}, 'Gleichzeitiger Beginn oder Ende'),
+    h('p', { class: 'hint' }, 'Wenn an einem Tag mehrere Personen am Vormittag oder mehrere am Nachmittag arbeiten, sollen sie möglichst zur selben Zeit beginnen und/oder enden. Weiche Regel (Gewicht unter „Gewichtung“).'),
+    h('div', { class: 'formgrid' },
+      labelled('Dienste am selben Tag', h('select', { onChange: (e) => { c.align.mode = e.target.value; save(); } },
+        [['none', 'keine Vorgabe'], ['start', 'gleichzeitig beginnen'], ['end', 'gleichzeitig enden'], ['either', 'gleichzeitig beginnen oder enden'], ['both', 'gleichzeitig beginnen und enden']].map(([v, l]) => h('option', { value: v, selected: c.align.mode === v }, l)))),
+      labelled('Vormittag = Beginn vor', time(c.align, 'split'), 'Dienste, die später beginnen, zählen als Nachmittag. Vormittags- und Nachmittagsdienste werden getrennt verglichen.')));
+
   const weights = h('div', { class: 'card wide' },
     h('h2', {}, 'Gewichtung'),
     h('p', { class: 'hint' }, 'Wie stark der Generator eine Abweichung bestraft. Höher = wichtiger. „Kann nicht“, Termine, Dienstzeiten und die Regel nach spätem Dienst gelten immer, unabhängig davon.'),
@@ -90,5 +98,5 @@ export function renderSetupView() {
       h('button', { class: 'btn quiet', onClick: () => { c.closedDates.splice(i, 1); rerender(); } }, 'Entfernen'))),
     h('button', { class: 'btn', onClick: () => { c.closedDates.push({ date: `${s.ui.month}-01`, note: '' }); rerender(); } }, 'Tag hinzufügen'));
 
-  return h('section', { class: 'view setup' }, general, windows, coverage, weekend, rules, closed, weights);
+  return h('section', { class: 'view setup' }, general, windows, coverage, weekend, align, rules, closed, weights);
 }

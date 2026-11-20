@@ -34,6 +34,9 @@ fixed duties are never changed, even if they break a rule; the analysis reports 
 | outside | half hours of weekday duties outside any coverage window |
 | prefDay | weekday duty on a non-preferred weekday (days with appointments excepted) |
 | consecutive | duties on two consecutive days, for persons with "avoid consecutive" |
+| rather | half hours of a duty inside a "rather not" (`-`) wish |
+| weeklyWish | per person and week, missing duties that start inside the wish window |
+| align | per day and group (morning / afternoon): spread in half hours between starts and/or ends, depending on the mode |
 | want | a day with "wants to work" without duty |
 | emptyWeekend | weekends without any duty above `maxEmptyWeekends` |
 | balanceDay | sum of squared differences from the mean of duties on balance weekdays (this month + previous `balanceHistoryMonths`) |

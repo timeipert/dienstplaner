@@ -5,7 +5,7 @@ import { store, save } from './store.js';
 import { getPlan, dutyKey, STATUS, STEP, visibleRange } from './model.js';
 import { buildProblem, createOptimizer, analyze, storedChoice } from './scheduler.js';
 import { planToCsv, planToIcs } from './exporters.js';
-import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT } from './util.js';
+import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
 const undoStack = []; // { key, json }
 const genOptions = { keepAll: false, budget: 3000 };
@@ -53,14 +53,20 @@ export function renderPlanView() {
       const issues = A.dutyIssues[p][d];
       const worst = issues.some((x) => x.level === 'bad') ? 'bad' : issues.length ? 'warn' : '';
       const avs = P.av[p][d];
-      const blocks = [];
-      let b = -1;
-      for (let i = 0; i <= avs.length; i++) {
-        const isX = i < avs.length && avs[i] === 'x';
-        if (isX) { if (b < 0) b = i; } else if (b >= 0) { blocks.push([b * STEP, i * STEP]); b = -1; }
-      }
+      const runsOf = (ch) => {
+        const out = [];
+        let b = -1;
+        for (let i = 0; i <= avs.length; i++) {
+          const on = i < avs.length && avs[i] === ch;
+          if (on) { if (b < 0) b = i; } else if (b >= 0) { out.push([b * STEP, i * STEP]); b = -1; }
+        }
+        return out;
+      };
+      const blocks = runsOf('x');
+      const rathers = runsOf('-');
       return h('div', { class: 'lane', title: `${person.name}: klicken zum Bearbeiten`, onClick: () => openEditor(P, A, person, day, d) },
         blocks.filter(([a, c]) => c > v0 && a < v1).map(([a, c]) => h('i', { class: 'blocked', style: `left:${pct(a)};width:${width(a, c)}` })),
+        rathers.filter(([a, c]) => c > v0 && a < v1).map(([a, c]) => h('i', { class: 'rather', style: `left:${pct(a)};width:${width(a, c)}` })),
         P.appts[p][d].map((a) => h('i', { class: 'appt', style: `left:${pct(a.from)};width:${width(a.from, a.to)}`, title: a.title })),
         du ? h('span', { class: `bar ${worst} ${du.locked ? 'locked' : ''}`, style: `left:${pct(minutesOf(du.from))};width:${width(minutesOf(du.from), minutesOf(du.to))}`, title: [`${person.name} ${du.from}–${du.to}`, ...issues.map((x) => x.text)].join('\n') },
           `${person.name} ${du.from}–${du.to}`) : (worst ? h('span', { class: `miss ${worst}`, title: issues.map((x) => x.text).join('\n') }, `${person.name}: !`) : h('span', { class: 'who' }, person.name)));
@@ -105,12 +111,22 @@ export function renderPlanView() {
         h('span', {}, h('i', { class: 'lg-req' }), 'benötigte Besetzung'),
         h('span', {}, h('i', { class: 'lg-gap' }), 'Lücke'),
         h('span', {}, h('i', { class: 'lg-appt' }), 'Termin'),
-        h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht')),
+        h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht'),
+        h('span', {}, h('i', { class: 'lg-rather' }), 'eher nicht')),
       h('div', { class: 'timeline', style: `--hours:${(v1 - v0) / 60}` },
         h('div', { class: 'tl-day head' }, h('div', { class: 'tl-date' }), h('div', { class: 'tl-body' }, scale), h('div', { class: 'tl-text' })),
         P.days.map(dayRow))],
     renderStats(s, P, A, key),
     renderMessages(A));
+}
+
+/** ISO calendar week number of a date string. */
+function weekNumber(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  const dow = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dow);
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
 }
 
 /** "14:00" -> "14", "15:30" -> "15:30" */
@@ -124,13 +140,17 @@ function renderCalendar(P, A, plan) {
   const people = P.people.filter((person) => person.active || Object.keys(plan.duties).some((k) => k.startsWith(person.id + '|')));
   const rows = [];
   P.weekKeys.forEach((wk, w) => {
-    rows.push(h('tr', { class: 'cal-date' }, h('th', {}, ''), order.map((_, i) => {
+    if (w > 0) rows.push(h('tr', { class: 'cal-gap' }, h('td', { colspan: 9 })));
+    rows.push(h('tr', { class: `cal-date ${w === 0 ? 'first' : ''}` }, h('th', { class: 'weeklabel' }, `KW ${weekNumber(P.days[P.weekDays[w][0]].date)}`), order.map((_, i) => {
       const day = byDn.get(wk + i);
       if (!day) return h('td', { class: 'out' });
       const gaps = A.dayInfo[day.d].gaps;
-      return h('td', { class: `${day.weekend ? 'we' : ''}` },
-        h('span', { class: 'dnum' }, formatDay(day.date)),
-        day.closed ? h('small', {}, ' geschlossen') : null,
+      const dayNo = Number(day.date.slice(8));
+      return h('td', { class: `dayhead ${day.weekend ? 'we' : ''} ${day.closed ? 'closedday' : ''}` },
+        h('span', { class: 'dnum' }, String(dayNo)),
+        h('span', { class: 'dwd' }, WEEKDAYS_SHORT[day.wd]),
+        dayNo === 1 ? h('span', { class: 'dmonth' }, MONTHS[Number(day.date.slice(5, 7)) - 1]) : null,
+        day.closed ? h('small', { class: 'dclosed' }, ' geschlossen') : null,
         gaps.length ? h('div', { class: 'gaptext' }, gaps.map(([a, b]) => `${shortTime(fmtMin(a))}–${shortTime(fmtMin(b))} offen`).join(', ')) : null);
     }), h('td', { class: 'wsum head' }, w === 0 ? 'Std. Woche' : '')));
     people.forEach((person) => {

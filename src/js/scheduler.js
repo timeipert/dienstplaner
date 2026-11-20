@@ -17,7 +17,7 @@ export function isAbsent(person, date) {
   return (person.absences || []).some((a) => a.from && date >= a.from && date <= (a.to || a.from));
 }
 
-/** Effective wish string of a person for a date: absence > entry for the date > weekly pattern. Chars '.', 'x', '+'. */
+/** Effective wish string of a person for a date: absence > entry for the date > weekly pattern. Chars '.', 'x', '-', '+'. */
 export function effectiveDay(state, person, date) {
   if (isAbsent(person, date)) return FULL_BLOCK;
   const base = person.pattern?.[weekdayOf(date)] || EMPTY_DAY;
@@ -119,6 +119,7 @@ export function buildProblem(state, key, opts = {}) {
   const av = [], appts = [], cand = [], forced = [], fixed = [], initial = [];
   const workdays = 7 - cfg.weekendDays.length || 5;
   const target = [];
+  const weekWork = [];
   people.forEach((person, p) => {
     av.push([]); appts.push([]); cand.push([]); forced.push([]); fixed.push([]); initial.push([]);
     days.forEach((day) => {
@@ -134,7 +135,9 @@ export function buildProblem(state, key, opts = {}) {
       av[p].push(avs); appts[p].push(ap); cand[p].push(list); fixed[p].push(fix); initial[p].push(ch);
       forced[p].push(ap.length > 0 && list.length > 0);
     });
-    target.push(weekDays.map((ds) => ds.filter((d) => !days[d].weekend && !days[d].closed && !isAbsent(person, days[d].date)).length * person.weeklyHours * 60 / workdays));
+    const work = weekDays.map((ds) => ds.filter((d) => !days[d].weekend && !days[d].closed && !isAbsent(person, days[d].date)).length);
+    weekWork.push(work);
+    target.push(work.map((n) => n * person.weeklyHours * 60 / workdays));
   });
 
   // history: duties on balance weekdays in previous months, and the last duty of the previous month
@@ -160,7 +163,7 @@ export function buildProblem(state, key, opts = {}) {
   const pairs = [];
   people.forEach((a, p) => people.forEach((b, q) => { if (p < q && a.active && b.active) pairs.push([p, q]); }));
 
-  return { key, cfg, W: cfg.weights, people, pIndex, days, weekKeys, weekDays, weekends, need, av, appts, cand, forced, fixed, initial, target, hist, prevEnd, pairs };
+  return { key, cfg, W: cfg.weights, people, pIndex, days, weekKeys, weekDays, weekends, weekWork, need, av, appts, cand, forced, fixed, initial, target, hist, prevEnd, pairs };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -182,12 +185,32 @@ function makeEval(P, choice) {
     }
     return cnt;
   };
+  const alignMode = cfg.align.mode;
+  const alignSplit = minutesOf(cfg.align.split);
+  /** Spread of start / end times among duties of the same group (morning / afternoon) on one day. */
+  const alignCost = (d) => {
+    if (alignMode === 'none' || !W.align) return 0;
+    const groups = [[], []];
+    for (let p = 0; p < people.length; p++) {
+      const du = dutyOf(p, d);
+      if (du) groups[du.from < alignSplit ? 0 : 1].push(du);
+    }
+    let cost = 0;
+    for (const g of groups) {
+      if (g.length < 2) continue;
+      const sSpread = (Math.max(...g.map((x) => x.from)) - Math.min(...g.map((x) => x.from))) / STEP;
+      const eSpread = (Math.max(...g.map((x) => x.to)) - Math.min(...g.map((x) => x.to))) / STEP;
+      const v = alignMode === 'start' ? sSpread : alignMode === 'end' ? eSpread : alignMode === 'both' ? sSpread + eSpread : Math.min(sSpread, eSpread);
+      cost += W.align * v;
+    }
+    return cost;
+  };
   const dayCost = (d) => {
     const n = need[d];
     const cnt = coverCount(d);
     let short = 0;
     for (let i = 0; i < CELLS; i++) if (n[i] > cnt[i]) short += n[i] - cnt[i];
-    return short * W.coverage;
+    return short * W.coverage + alignCost(d);
   };
   const weekMisses = (w) => {
     const out = [];
@@ -214,9 +237,10 @@ function makeEval(P, choice) {
     const person = people[p];
     let hard = 0;
     let cost = 0;
-    const info = detail ? { late: [], weeks: [], weekend: 0, apptOnly: 0, consecutive: 0, wantMissed: 0, balance: 0, worked: 0, prefMiss: 0 } : null;
+    const info = detail ? { rather: [], wishMiss: [], late: [], weeks: [], weekend: 0, apptOnly: 0, consecutive: 0, wantMissed: 0, balance: 0, worked: 0, prefMiss: 0 } : null;
     let prev = P.prevEnd[p] >= 0 ? { to: P.prevEnd[p] } : null;
     const worked = new Float64Array(P.weekKeys.length);
+    const starts = P.weekKeys.map(() => []);
     let weekend = 0;
     let apptOnly = 0;
     for (let d = 0; d < days.length; d++) {
@@ -225,6 +249,14 @@ function makeEval(P, choice) {
       if (du) {
         if (late.on && prev && prev.to > lateEnd && du.from < lateNext) { hard++; if (detail) info.late.push(d); }
         worked[day.w] += du.len;
+        starts[day.w].push(du.from);
+        if (W.rather) {
+          const avs = P.av[p][d];
+          let rr = 0;
+          for (let i = du.from / STEP; i < du.to / STEP; i++) if (avs[i] === '-') rr++;
+          cost += W.rather * rr;
+          if (detail && rr) info.rather.push(d);
+        }
         if (day.weekend) {
           weekend++;
           if (du.to > avoidAfter) cost += W.weekendLate * (du.to - avoidAfter) / STEP;
@@ -248,6 +280,19 @@ function makeEval(P, choice) {
         if (detail) info.wantMissed++;
       }
       prev = du;
+    }
+    for (const wish of person.weeklyWishes || []) {
+      const a = minutesOf(wish.from);
+      const b = minutesOf(wish.to);
+      for (let w = 0; w < worked.length; w++) {
+        const need = Math.min(Number(wish.days) || 1, P.weekWork[p][w]);
+        if (P.weekWork[p][w] < 3 || need <= 0) continue;
+        const have = starts[w].filter((m) => m >= a && m < b).length;
+        if (have < need) {
+          cost += W.weeklyWish * (need - have);
+          if (detail) info.wishMiss.push({ w, wish, missing: need - have });
+        }
+      }
     }
     for (let w = 0; w < worked.length; w++) {
       cost += W.hours * Math.abs(worked[w] - P.target[p][w]) / 60;
@@ -534,6 +579,13 @@ export function analyze(P, choice) {
         }
       }
     });
+    for (const d of r.info.rather) {
+      dutyIssues[p][d].push({ level: 'warn', text: 'Liegt (teilweise) in einer „eher nicht“-Zeit' });
+      messages.push({ level: 'warn', d, text: `${person.name}, ${formatDay(days[d].date)}: Dienst in „eher nicht“-Zeit` });
+    }
+    for (const m of r.info.wishMiss) {
+      messages.push({ level: 'warn', text: `${person.name}: Woche ab ${formatDay(days[P.weekDays[m.w][0]].date)}: Wunsch „${m.wish.label || 'wöchentlich'}“ (${m.wish.from}–${m.wish.to}) nicht erfüllt` });
+    }
     if (person.active && r.info.weekend !== cfg.weekendDuty.perMonth) {
       messages.push({ level: 'warn', text: `${person.name}: ${r.info.weekend} statt ${cfg.weekendDuty.perMonth} Wochenenddienst(e)` });
     }

@@ -13,7 +13,8 @@
 //   state.ui, state.meta
 //
 // dayString: 48 characters, one per half hour of the day (index 0 = 00:00–00:30).
-//   '.' no entry   'x' cannot work (hard)   '+' wants to work   'o' can work (overrides the weekly pattern)
+//   '.' no entry   'x' cannot work (hard)   '-' rather not (soft)   '+' wants to work
+//   'o' can work (overrides the weekly pattern for that half hour)
 
 import { uid, currentMonthKey, shiftMonth, minutesOf } from './util.js';
 
@@ -35,13 +36,16 @@ export const WEIGHT_DEFS = [
   ['consecutive', 'Dienste an zwei Tagen hintereinander (falls vermeiden)', 'je Paar'],
   ['want', '„Möchte arbeiten“ nicht berücksichtigt', 'je Tag'],
   ['outside', 'Dienstzeit außerhalb der benötigten Besetzung (werktags)', 'je halbe Stunde'],
+  ['align', 'Dienste am selben Tag beginnen/enden nicht gleichzeitig (siehe Einrichtung)', 'je halbe Stunde Abstand'],
+  ['rather', 'Dienst in „eher nicht“-Zeit', 'je halbe Stunde'],
+  ['weeklyWish', 'Wöchentlicher Wunsch (z. B. einmal vormittags) nicht erfüllt', 'je fehlendem Dienst'],
   ['emptyWeekend', 'Zu viele Wochenenden ganz ohne Dienst', 'je Wochenende über der Grenze'],
   ['balanceDay', 'Ungleich verteilte Ausgleichstage (z. B. Freitage)', 'Faktor'],
   ['pairs', 'Ungleich verteilte gemeinsame Zeit', 'Faktor'],
 ];
 
 export function defaultWeights() {
-  return { coverage: 200, weeklyCoverage: 300, hours: 20, weekend: 400, weekendLate: 40, apptOnly: 300, length: 8, prefDay: 15, consecutive: 40, want: 25, emptyWeekend: 500, outside: 3, balanceDay: 60, pairs: 3 };
+  return { coverage: 200, weeklyCoverage: 300, hours: 20, weekend: 400, weekendLate: 40, apptOnly: 300, length: 8, prefDay: 15, consecutive: 40, want: 25, emptyWeekend: 500, rather: 6, weeklyWish: 120, align: 10, outside: 3, balanceDay: 60, pairs: 3 };
 }
 
 export function defaultConfig() {
@@ -58,6 +62,9 @@ export function defaultConfig() {
     weeklyCoverage: [], // { id, weekdays, from, to, min, days }: on `days` days per week the window is covered
     weekendDays: [6, 0],
     weekendDuty: { perMonth: 1, hours: 3, avoidAfter: '20:00' }, // per person
+    // Same-day alignment of duties inside the morning group (start before `split`) and the afternoon group.
+    // mode: none | start (start together) | end (end together) | either (one of both) | both
+    align: { mode: 'none', split: '13:00' },
     maxEmptyWeekends: 1, // weekends of the month on which nobody works (team-wide)
     appointments: [], // { id, title, repeat: 'weekly'|'once', weekday, date, from, to, participants: 'all'|[ids] }
     appointmentOnlyMax: 1, // duties that consist only of an appointment, per person and month
@@ -73,7 +80,7 @@ export function defaultConfig() {
 export function newPerson(name = 'Neue Person', extra = {}) {
   return {
     id: uid('pe'), name, weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5,
-    preferredWeekdays: [], avoidConsecutive: true, pattern: {}, absences: [], active: true, note: '', ...extra,
+    preferredWeekdays: [], avoidConsecutive: true, weeklyWishes: [], pattern: {}, absences: [], active: true, note: '', ...extra,
   };
 }
 
@@ -94,7 +101,8 @@ export const PRESETS = {
       c.weeklyCoverage = [{ id: uid('wc'), weekdays: [1, 2, 3, 4, 5], from: '20:00', to: '21:00', min: 1, days: 1 }];
       c.appointments = [{ id: uid('ap'), title: 'Teamsitzung', repeat: 'weekly', weekday: 2, date: '', from: '14:00', to: '15:30', participants: 'all' }];
       const people = [
-        newPerson('J1', { weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5, preferredWeekdays: [1, 3, 5], avoidConsecutive: true }),
+        newPerson('J1', { weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5, preferredWeekdays: [1, 3, 5], avoidConsecutive: true,
+          pattern: { 5: blockString(20 * 60, 21 * 60, '-') }, note: 'Beispiel: freitags eher nicht bis 21 Uhr' }),
         newPerson('J2', {
           weeklyHours: 15, minLen: 5, maxLen: 5, prefLen: 5, preferredWeekdays: [1, 3, 5], avoidConsecutive: true,
           pattern: { 3: blockString(0, 16 * 60 + 30), 5: blockString(18 * 60, 24 * 60) },
@@ -132,6 +140,7 @@ export function normalizeState(s) {
   c.dayWindows = { ...base.dayWindows, ...(c.dayWindows || {}) };
   c.weekendDuty = { ...base.weekendDuty, ...(c.weekendDuty || {}) };
   c.lateRule = { ...base.lateRule, ...(c.lateRule || {}) };
+  c.align = { ...base.align, ...(c.align || {}) };
   c.weights = { ...defaultWeights(), ...(c.weights || {}) };
   for (const k of ['coverage', 'weeklyCoverage', 'appointments', 'closedDates', 'balanceWeekdays', 'weekendDays']) {
     if (!Array.isArray(c[k])) c[k] = base[k];
@@ -142,6 +151,7 @@ export function normalizeState(s) {
     for (const k of Object.keys(q.pattern)) if (!isDayString(q.pattern[k])) delete q.pattern[k];
     q.absences = Array.isArray(q.absences) ? q.absences : [];
     q.preferredWeekdays = Array.isArray(q.preferredWeekdays) ? q.preferredWeekdays : [];
+    q.weeklyWishes = Array.isArray(q.weeklyWishes) ? q.weeklyWishes : [];
     for (const k of ['weeklyHours', 'minLen', 'maxLen', 'prefLen']) q[k] = Number(q[k]) || 0;
     if (q.maxLen < q.minLen) q.maxLen = q.minLen;
     return q;

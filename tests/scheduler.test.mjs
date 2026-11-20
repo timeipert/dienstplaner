@@ -142,3 +142,66 @@ test('schema-1 data is replaced instead of crashing', () => {
   const st = normalizeState({ version: 1, config: { demand: [] } });
   assert.equal(st.version, 2);
 });
+
+test('"rather not" hours are avoided when there is a choice', () => {
+  const s = scenario();
+  const j1 = s.people.find((p) => p.name === 'J1'); // preset: Friday 20:00–21:00 rather not
+  const r = generate(s, KEY, { budgetMs: 1500 });
+  for (const du of duties(r).filter((x) => x.pid === j1.id && weekdayOf(x.date) === 5)) {
+    assert.ok(du.to <= 20 * 60, `${du.date} ends ${du.to}`);
+  }
+});
+
+test('"rather not" is a soft rule: a duty can still be placed there by hand and is flagged', () => {
+  const s = scenario();
+  const j1 = s.people.find((p) => p.name === 'J1');
+  getPlan(s, KEY).duties[dutyKey(j1.id, '2026-12-04')] = { from: '16:00', to: '21:00' };
+  const P = buildProblem(s, KEY, { keep: 'all' });
+  const a = analyze(P, storedChoice(P));
+  assert.ok(a.messages.some((m) => m.level === 'warn' && m.text.includes('eher nicht')));
+  assert.ok(!a.messages.some((m) => m.level === 'bad' && m.text.includes('J1') && m.text.includes('4.12.')));
+});
+
+test('weekly wish: once a week a duty that starts in the morning', () => {
+  const s = scenario();
+  const n = s.people.find((p) => p.name === 'N');
+  n.weeklyWishes = [{ id: 'w1', label: 'Vormittag', days: 1, from: '10:00', to: '13:00' }];
+  const r = generate(s, KEY, { budgetMs: 2500 });
+  const P = r.problem;
+  const mine = duties(r).filter((x) => x.pid === n.id);
+  for (let w = 0; w < P.weekDays.length; w++) {
+    if (P.weekWork[P.pIndex.get(n.id)][w] < 3) continue;
+    const dates = new Set(P.weekDays[w].map((d) => P.days[d].date));
+    const morning = mine.filter((x) => dates.has(x.date) && x.from >= 10 * 60 && x.from < 13 * 60);
+    assert.ok(morning.length >= 1, `week ${w}`);
+  }
+});
+
+test('whole-day block (all x) means no duty that day', () => {
+  const s = scenario();
+  const n = s.people.find((p) => p.name === 'N');
+  s.availability[KEY] = { [n.id]: { '2026-12-10': blockString(0, 24 * 60) } };
+  const r = generate(s, KEY, { budgetMs: 600 });
+  assert.equal(duties(r).filter((x) => x.pid === n.id && x.date === '2026-12-10').length, 0);
+});
+
+test('same-day alignment: "start together" reduces start-time spread among morning/afternoon duties', () => {
+  const spread = (mode) => {
+    const s = scenario();
+    s.config.align.mode = mode;
+    const r = generate(s, KEY, { budgetMs: 2500 });
+    const ds = duties(r);
+    let total = 0;
+    for (const date of new Set(ds.map((x) => x.date))) {
+      for (const afternoon of [false, true]) {
+        const g = ds.filter((x) => x.date === date && (x.from >= 13 * 60) === afternoon);
+        if (g.length >= 2) total += (Math.max(...g.map((x) => x.from)) - Math.min(...g.map((x) => x.from))) / 30;
+      }
+    }
+    return total;
+  };
+  const none = spread('none');
+  const start = spread('start');
+  assert.ok(start <= none, `start ${start} vs none ${none}`);
+  assert.ok(start <= 12, `spread with "start" is ${start}`);
+});

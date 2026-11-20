@@ -42,8 +42,10 @@ In the repository settings, Pages → Source must be "GitHub Actions".
 The plan for month M is due on day `deadlineDay` (default 4) of month M−1. The app opens the
 following month by default.
 
-1. **Wünsche:** per person and half hour "cannot work" (hard), "wants to work" (preferred),
-   "can (exception)" (overrides the weekly pattern); absences (vacation).
+1. **Wünsche:** per person: whole days that are impossible (click the day chips), per half hour
+   "cannot work" (hard), "rather not" (soft, for example Fridays until 21:00), "wants to work"
+   (preferred), "can (exception)" (overrides the weekly pattern); weekly wishes such as "once a
+   week a duty that starts in the morning"; absences (vacation).
 2. **Termine:** one-off appointments of the month (for example a case conference) with participants.
 3. **Plan:** "Plan erstellen", then adjust duties by clicking a lane (timeline) or a cell
    (calendar); "Fixieren" keeps a duty. Two views, switch "Zeitleiste | Kalender":
@@ -63,7 +65,9 @@ following month by default.
 | Weekly coverage | A window that must be covered on n days per week, day chosen freely (for example once a week until 21:00). |
 | Appointment ("Termin") | Weekly (team meeting) or one-off; every participant's duty that day must contain it, as one block. |
 | Appointment-only duty | A duty that consists only of the appointment (shorter than the person's minimum length); limited per month. |
-| Wish string | 48 characters per day, one per half hour: `.` none, `x` cannot, `+` wants, `o` can (exception). |
+| Wish string | 48 characters per day, one per half hour: `.` none, `x` cannot, `-` rather not (soft), `+` wants, `o` can (exception). |
+| Weekly wish | Per person: on n days per week a duty that starts inside a window (for example 10:00–13:00 = morning). Soft; only for weeks with at least 3 possible workdays. |
+| Alignment | Setup: duties of the same day and the same group (morning = starts before 13:00, afternoon) should start together, end together, either, or both. Soft. |
 | Balance weekdays | Weekdays (default Friday) whose duties are spread evenly across persons, including previous months. |
 | Late rule | After a duty ending after 20:30 the next day's duty starts at 13:00 at the earliest (configurable). |
 | Normal span | 10:00–21:00 (Setup → duty times per weekday and display range). Duties entered by hand and appointments may lie outside (for example from 07:30); the views widen automatically and mark such duties. The generator plans only inside the duty times of the weekday, except to include an appointment. |
@@ -86,6 +90,10 @@ following month by default.
 | Case conference in the morning, varying persons, one block with the duty | Termine → one-off appointment |
 | Shared working time balanced between all persons | Weight "shared time" |
 | "Cannot work" wishes are hard (override only after talking to the person: edit by hand) | Wishes → "Kann nicht" |
+| Whole days impossible | Wishes → day chips |
+| Once a week a morning duty (per person) | Wishes → weekly wish |
+| "Rather not on Friday until 21:00" | Wishes → brush "Eher nicht" in the weekly pattern |
+| Morning or afternoon duties start / end at the same time | Setup → simultaneous start or end |
 | After a duty until 21:00 no start before 13:00 next day | Setup → late rule |
 
 ## Code map
