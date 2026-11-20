@@ -4,7 +4,7 @@
 // unique across the files (checked below).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
-const ORDER = ['util', 'model', 'scheduler', 'report', 'search', 'suggest', 'xlsx', 'exporters', 'store', 'ui-core', 'view-plan', 'view-avail', 'view-people', 'view-setup', 'view-data', 'view-appts', 'view-report', 'view-rules', 'app', 'main'];
+const ORDER = ['util', 'model', 'wishtext', 'scheduler', 'report', 'search', 'suggest', 'xlsx', 'exporters', 'store', 'ui-core', 'view-plan', 'view-avail', 'view-people', 'view-setup', 'view-data', 'view-appts', 'view-report', 'view-rules', 'app', 'main'];
 const seen = new Map();
 let js = '';
 for (const name of ORDER) {

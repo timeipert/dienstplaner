@@ -9,7 +9,7 @@ contract hours of every person and spreads special days fairly.
 - **Where it runs:** GitHub Pages (static file, no backend). All data stays in the browser of the
   person who plans. Separate project from the KULT shift planner (`../shift-planner`, Firebase),
   which it was forked from on 2026-11-20 and which stays unchanged.
-- **State:** 2026-11-20, version 0.7.0. Published at https://timeipert.github.io/dienstplaner/
+- **State:** 2026-11-20, version 0.8.0. Published at https://timeipert.github.io/dienstplaner/
   (repository `timeipert/dienstplaner`). The app ships only neutral defaults ("Grundeinstellungen":
   no persons, no appointments, no named examples). The three-person scenario of the first team is
   kept as test data in `tests/fixture.mjs`.
@@ -69,10 +69,17 @@ The interface shows the essentials first and folds details away:
 The plan for month M is due on day `deadlineDay` (default 4) of month M−1. The app opens the
 following month by default.
 
-1. **Wünsche:** per person: whole days that are impossible (click the day chips), per half hour
-   "cannot work" (hard), "rather not" (soft, for example Fridays until 21:00), "wants to work"
-   (preferred), "can (exception)" (overrides the weekly pattern); weekly wishes such as "once a
-   week a duty that starts in the morning"; absences (vacation).
+1. **Wünsche** (reworked 2026-11-20, version 0.8.0): per person (buttons at the top), everything
+   that can be entered is visible at once as a short text; a click on an item opens its editor.
+   - The month as a calendar: every day shows its entries ("nicht bis 12", "eher nicht ab 20",
+     "ganzer Tag nicht", "möchte 14–17", "abwesend · Urlaub", appointments). A click opens the
+     day editor: whole day impossible, a time range ("kann nicht von 12 bis 14"), or single half
+     hours with a brush ("cannot work" is hard, "rather not" soft, "wants to work" preferred,
+     "can (exception)" overrides the weekly pattern). Entries inherited from the weekly pattern
+     are shown lighter. On a phone the calendar becomes a list of days.
+   - The weekly pattern (valid every month, same editor); weekly wishes such as "once a week a
+     duty that starts in the morning" and absences (vacation) as lists; a click opens a form.
+   Texts of the entries: `src/js/wishtext.js` (tested in `tests/wishtext.test.mjs`).
 2. **Termine:** one-off appointments of the month (for example a case conference) with participants.
 3. **Plan → "Einstellungen nur für <Monat>"** (month settings, stored in `monthSettings['YYYY-MM']`,
    they change nothing outside that month): no morning duties for everybody or for single persons
@@ -188,6 +195,7 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
 | `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met, pool of variants. |
 | `src/js/suggest.js` | Ranked suggestions for one duty (times, swaps, trades, moves) and their effect on the plan. |
+| `src/js/wishtext.js` | Short texts of the wishes of a day ("nicht bis 12"), used by the wishes view. |
 | `src/js/exporters.js` | Table for pasting into a template (`planToGrid`), list of duties, iCalendar, Excel file (three sheets). |
 | `src/js/xlsx.js` | Minimal .xlsx writer (ZIP without compression, one or more sheets, styles); no library. |
 | `src/js/view-rules.js` | Rules tab: rules as sentences, importance levels. |
@@ -196,6 +204,7 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | `build.mjs` | Concatenates the modules into `dist/dienstplaner.html`; fails on duplicate top-level names. |
 | `tests/scheduler.test.mjs` | Scenario tests (the first team's rules). |
 | `tests/suggest.test.mjs` | Suggestions and variants. |
+| `tests/wishtext.test.mjs` | Texts of day wishes. |
 | `tests/xlsx.test.mjs` | ZIP writer and Excel export. |
 | `tests/month-search.test.mjs` | Month settings, vacation edges, lower bounds, time-limited search. |
 | `docs/generator.md` | How the generator works, measured distance to the optimum. |
