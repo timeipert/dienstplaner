@@ -5,6 +5,17 @@ import { analyze, makeEval } from './scheduler.js';
 import { STEP } from './model.js';
 import { minutesOf, fmtHours } from './util.js';
 
+/** Weight (config.weights key) that controls a constraint of the report; hard rules have none. */
+export function weightFor(id) {
+  if (id.startsWith('wc-')) return 'weeklyCoverage';
+  return {
+    coverage: 'coverage', weekHours: 'hours', weekendDuty: 'weekend', weekendEnd: 'weekendLate', emptyWe: 'emptyWeekend',
+    apptOnly: 'apptOnly', consec: 'consecutive', prefDays: 'prefDay', rather: 'rather', weeklyWish: 'weeklyWish', want: 'want',
+    align: 'align', length: 'length', vacation: 'vacation', 'bal-ratio': 'hours', 'bal-day': 'balanceDay', 'bal-we': 'weekend',
+    'bal-late': 'lateBalance', 'bal-pair': 'pairs',
+  }[id] || null;
+}
+
 /** Status for a "met of total" constraint. Hard constraints: every miss is a violation. */
 function ratioStatus(met, total, hard) {
   if (total === 0) return 'na';
@@ -14,6 +25,63 @@ function ratioStatus(met, total, hard) {
 }
 
 const pct = (met, total) => (total ? Math.round((met / total) * 100) : 100);
+
+/**
+ * Lower bounds per person: what no plan can avoid, given availability, appointments, duty
+ * lengths and the weekly hours. Per week, every set of weekdays that contains the days with
+ * appointments (or locked duties) and can reach the weekly hours is tried.
+ * - weeks[w].minDev: smallest reachable distance to the weekly target (hours)
+ * - consec: fewest pairs of weekday duties on two days in a row (if avoidConsecutive)
+ * - prefMiss: fewest duties outside the preferred weekdays
+ * Weekend duties and pairs across week borders are left out, so the bounds stay lower bounds.
+ */
+export function structuralBounds(P) {
+  const tol = 1; // weekly hours count as reached within 1 hour (same as the report)
+  return P.people.map((person, p) => {
+    const out = { consec: 0, prefMiss: 0, weeks: [], notes: [] };
+    if (!person.active) return out;
+    P.weekDays.forEach((ds, w) => {
+      const T = P.target[p][w] / 30; // in half hours
+      const lensOf = (d) => P.lens[p][d].map((l) => l / 30);
+      // reachable sums over all days of the week (weekend included)
+      let reach = new Set([0]);
+      for (const d of ds) {
+        const next = new Set();
+        const opts = P.must[p][d] ? lensOf(d) : [0, ...lensOf(d)];
+        for (const a of reach) for (const l of opts) next.add(a + l);
+        if (next.size) reach = next;
+      }
+      const minDev = Math.min(...[...reach].map((x) => Math.abs(x - T))) / 2;
+      out.weeks.push({ minDev });
+      const allow = Math.max(tol, minDev) + 1e-6;
+      const wdays = ds.filter((d) => !P.days[d].weekend && P.lens[p][d].length);
+      const weDays = ds.filter((d) => P.days[d].weekend && P.lens[p][d].length);
+      const weOpts = [0, ...new Set(weDays.flatMap(lensOf))];
+      if (!wdays.length) return;
+      let bestC = Infinity, bestP = Infinity;
+      for (let mask = 0; mask < 1 << wdays.length; mask++) {
+        const set = wdays.filter((_, i) => mask & (1 << i));
+        if (wdays.some((d, i) => P.must[p][d] && !(mask & (1 << i)))) continue;
+        const lo = set.reduce((a, d) => a + Math.min(...lensOf(d)), 0);
+        const hi = set.reduce((a, d) => a + Math.max(...lensOf(d)), 0);
+        if (!weOpts.some((we) => Math.max(0, lo + we - T, T - hi - we) / 2 <= allow)) continue;
+        let c = 0;
+        for (let i = 1; i < set.length; i++) if (P.days[set[i]].dn - P.days[set[i - 1]].dn === 1) c++;
+        const pm = person.preferredWeekdays.length ? set.filter((d) => !P.appts[p][d].length && !person.preferredWeekdays.includes(P.days[d].wd)).length : 0;
+        bestC = Math.min(bestC, c);
+        bestP = Math.min(bestP, pm);
+      }
+      if (bestC < Infinity && person.avoidConsecutive) out.consec += bestC;
+      if (bestP < Infinity) out.prefMiss += bestP;
+    });
+    const devWeeks = out.weeks.filter((x) => x.minDev > tol).length;
+    if (out.consec) out.notes.push(`${person.name}: mindestens ${out.consec} Dienst(e) an Folgetagen sind unvermeidbar (Wochenstunden, Dienstlängen und Termine lassen nicht genug freie Tage dazwischen).`);
+    if (out.prefMiss) out.notes.push(`${person.name}: mindestens ${out.prefMiss} Dienst(e) außerhalb der bevorzugten Tage sind unvermeidbar.`);
+    if (devWeeks) out.notes.push(`${person.name}: in ${devWeeks} Woche(n) sind die Sollstunden mit den möglichen Dienstlängen nicht auf 1 Std. genau erreichbar.`);
+    if (person.minLen === person.maxLen) out.fixedLenNote = (`${person.name}: Dienstlänge ist fest ${fmtHours(person.minLen)} Std. Ein Spielraum (z. B. ${fmtHours(Math.max(0.5, person.minLen - 0.5))}–${fmtHours(person.maxLen + 0.5)} Std. unter „Personen“) macht Wochenstunden und Wochenenddienste leichter vereinbar.`);
+    return out;
+  });
+}
 
 export function buildReport(P, choice) {
   const A = analyze(P, choice);
@@ -25,6 +93,7 @@ export function buildReport(P, choice) {
   const lateEnd = minutesOf(cfg.lateRule.endAfter);
   const lateNext = minutesOf(cfg.lateRule.nextFrom);
   const split = minutesOf(cfg.align.split);
+  const bounds = structuralBounds(P);
 
   // ---- per person figures
   const all = P.people.map((person, p) => {
@@ -89,7 +158,8 @@ export function buildReport(P, choice) {
       if (!P.appts[p][d].length) {
         nNoAppt++;
         const win = cfg.dayWindows[P.days[d].wd];
-        if (!win.on || du.from < minutesOf(win.from) || du.to > minutesOf(win.to)) outside++;
+        const person = P.people[p];
+        if (!win.on || du.from < minutesOf(win.from) || du.to > minutesOf(win.to) || (person.minStart >= 0 && du.from < person.minStart)) outside++;
       }
     }
   }
@@ -103,7 +173,7 @@ export function buildReport(P, choice) {
     }
   }
   ratio('appts', 'hart', 'Termine liegen im Dienst der Teilnehmenden', apptMet, apptTotal, apptTotal ? '' : 'keine Termine in diesem Monat', true, 'Teilnahmen');
-  ratio('window', 'hart', 'Dienste liegen in den Dienstzeiten des Wochentags', nNoAppt - outside, nNoAppt, outside ? `${outside} Dienst(e) außerhalb (von Hand eingetragen?)` : '', true, 'Dienste');
+  ratio('window', 'hart', 'Dienste liegen in den Dienstzeiten des Wochentags (und der Monatseinstellungen)', nNoAppt - outside, nNoAppt, outside ? `${outside} Dienst(e) außerhalb (von Hand eingetragen?)` : '', true, 'Dienste');
 
   let lateTotal = 0, lateViol = 0;
   if (cfg.lateRule.on) {
@@ -145,11 +215,12 @@ export function buildReport(P, choice) {
       if (wk.target <= 0) return;
       wkTotal++;
       const diff = Math.abs(wk.worked - wk.target);
-      if (diff <= 1) wkMet++;
-      if (!worst || diff > worst.diff) worst = { diff, name: r.person.name, w };
+      const allow = Math.max(1, bounds[r.idx].weeks[w]?.minDev ?? 0) + 1e-6;
+      if (diff <= allow) wkMet++;
+      else if (!worst || diff - allow > worst.diff - worst.allow) worst = { diff, allow, name: r.person.name, w };
     });
   }
-  ratio('weekHours', 'weich', 'Wochenstunden erreicht (Abweichung höchstens 1 Std.)', wkMet, wkTotal, worst && worst.diff > 1 ? `größte Abweichung ${fmtHours(worst.diff)} Std. (${worst.name})` : '', false, 'Personenwochen');
+  ratio('weekHours', 'weich', 'Wochenstunden erreicht (Abweichung höchstens 1 Std. oder so gering wie möglich)', wkMet, wkTotal, worst ? `größte Abweichung ${fmtHours(worst.diff)} Std. (${worst.name})` : '', false, 'Personenwochen');
 
   // weekend
   const off = active.filter((r) => r.weekend !== cfg.weekendDuty.perMonth);
@@ -166,11 +237,13 @@ export function buildReport(P, choice) {
 
   const avoidC = persons.filter((r) => r.person.avoidConsecutive);
   const cDuties = avoidC.reduce((a, r) => a + r.duties, 0);
-  const cConsec = avoidC.reduce((a, r) => a + r.consec, 0);
-  ratio('consec', 'weich', 'Keine Dienste an Folgetagen (wo gewünscht)', cDuties - cConsec, cDuties, cConsec ? avoidC.filter((r) => r.consec).map((r) => `${r.person.name}: ${r.consec}`).join(', ') : '', false, 'Dienste');
+  const cExcess = avoidC.reduce((a, r) => a + Math.max(0, r.consec - bounds[r.idx].consec), 0);
+  ratio('consec', 'weich', 'Keine Dienste an Folgetagen (wo gewünscht; unvermeidbare ausgenommen)', cDuties - cExcess, cDuties,
+    avoidC.filter((r) => r.consec).map((r) => `${r.person.name}: ${r.consec}${bounds[r.idx].consec ? ` (davon ${bounds[r.idx].consec} unvermeidbar)` : ''}`).join(', '), false, 'Dienste');
 
-  let pfTotal = 0, pfMet = 0;
+  let pfTotal = 0, pfMet = 0, pfUnavoid = 0;
   for (const r of persons) {
+    if (r.person.preferredWeekdays.length) pfUnavoid += bounds[r.idx].prefMiss;
     if (!r.person.preferredWeekdays.length) continue;
     for (let d = 0; d < nD; d++) {
       const du = duty(r.idx, d);
@@ -179,7 +252,7 @@ export function buildReport(P, choice) {
       if (r.person.preferredWeekdays.includes(P.days[d].wd)) pfMet++;
     }
   }
-  ratio('prefDays', 'weich', 'Dienste an bevorzugten Wochentagen', pfMet, pfTotal, '', false, 'Dienste');
+  ratio('prefDays', 'weich', 'Dienste an bevorzugten Wochentagen (unvermeidbare ausgenommen)', Math.min(pfTotal, pfMet + pfUnavoid), pfTotal, pfUnavoid ? `${pfTotal - pfMet} an anderen Tagen, davon ${pfUnavoid} unvermeidbar` : '', false, 'Dienste');
 
   let ratherBad = 0;
   for (let p = 0; p < P.people.length; p++) {
@@ -189,6 +262,16 @@ export function buildReport(P, choice) {
       for (let i = du.from / STEP; i < du.to / STEP; i++) if (P.av[p][d][i] === '-') { ratherBad++; break; }
     }
   }
+  let edgeTotal = 0, edgeBad = 0;
+  for (const r of active) {
+    for (let d = 0; d < nD; d++) {
+      if (!P.edge[r.idx][d] || !P.lens[r.idx][d].length) continue;
+      edgeTotal++;
+      if (duty(r.idx, d)) edgeBad++;
+    }
+  }
+  ratio('vacation', 'weich', 'Tag vor und nach einer Abwesenheit (Urlaub) frei', edgeTotal - edgeBad, edgeTotal, edgeTotal ? (edgeBad ? `${edgeBad} Dienst(e) direkt am Urlaub` : '') : 'keine Abwesenheiten in diesem Monat', false, 'Tage');
+
   ratio('rather', 'weich', 'Keine Dienste in „eher nicht“-Zeiten', nDuties - ratherBad, nDuties, ratherBad ? `${ratherBad} Dienst(e) berühren eine „eher nicht“-Zeit` : '', false, 'Dienste');
 
   let wwTotal = 0, wwMet = 0;
@@ -270,5 +353,7 @@ export function buildReport(P, choice) {
   const summary = { ok: rated.filter((c) => c.status === 'ok').length, warn: rated.filter((c) => c.status === 'warn').length, bad: rated.filter((c) => c.status === 'bad').length, total: rated.length };
   const weekdayTotals = Array(7).fill(0);
   persons.forEach((r) => r.byWd.forEach((n, i) => { weekdayTotals[i] += n; }));
-  return { constraints: cs.map((c) => ({ ...c, percent: c.total != null ? pct(c.met, c.total) : null })), persons, pairs, pairList, weekdayTotals, summary };
+  const weekHoursOk = cs.find((c) => c.id === 'weekHours')?.status !== 'bad' && cs.find((c) => c.id === 'weekHours')?.status !== 'warn';
+  const hints = bounds.flatMap((b) => (weekHoursOk || !b.fixedLenNote ? b.notes : [...b.notes, b.fixedLenNote]));
+  return { hints, bounds, constraints: cs.map((c) => ({ ...c, percent: c.total != null ? pct(c.met, c.total) : null })), persons, pairs, pairList, weekdayTotals, summary };
 }

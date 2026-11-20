@@ -8,8 +8,8 @@
 // weekend duty, balance of special weekdays (Fridays), balance of shared time, preferences.
 // Method: greedy improvement per cell, then simulated annealing. Details: docs/generator.md.
 
-import { daysOfMonth, weekdayOf, dayNumber, shiftMonth, minutesOf, makeRng, fmtMin, formatDay } from './util.js';
-import { STEP, CELLS, EMPTY_DAY, dutyKey } from './model.js';
+import { daysOfMonth, weekdayOf, dayNumber, shiftMonth, addDays, minutesOf, makeRng, fmtMin, formatDay } from './util.js';
+import { STEP, CELLS, EMPTY_DAY, dutyKey, monthSettingsOf, personMonthOf } from './model.js';
 
 const FULL_BLOCK = 'x'.repeat(CELLS);
 
@@ -45,10 +45,11 @@ function blocked(avs, from, to) {
   return false;
 }
 
-function candidatesFor(cfg, person, day, avs, ap) {
+/** minStart: earliest start from the month settings (no morning duties), -1 = none. */
+function candidatesFor(cfg, person, day, avs, ap, minStart = -1) {
   const win = cfg.dayWindows[day.wd];
   if (!win.on && !ap.length) return [];
-  let lo = minutesOf(win.from);
+  let lo = Math.max(minutesOf(win.from), minStart);
   let hi = minutesOf(win.to);
   const aFrom = ap.length ? Math.min(...ap.map((a) => a.from)) : 0;
   const aTo = ap.length ? Math.max(...ap.map((a) => a.to)) : 0;
@@ -94,7 +95,14 @@ export function buildProblem(state, key, opts = {}) {
   const plan = state.plans[key] || { duties: {} };
   const closed = new Set(cfg.closedDates.map((c) => c.date));
   const referenced = new Set(Object.keys(plan.duties || {}).map((k) => k.split('|')[0]));
-  const people = state.people.filter((p) => p.active || referenced.has(p.id));
+  const ms = monthSettingsOf(state, key);
+  const morningUntil = minutesOf(ms.morningUntil || '12:00');
+  // month settings produce an effective copy of each person (the stored person stays unchanged)
+  const people = state.people.filter((p) => p.active || referenced.has(p.id)).map((p) => {
+    const pm = personMonthOf(ms, p.id);
+    const hours = pm.hours === '' || pm.hours == null ? p.weeklyHours : Number(pm.hours) || 0;
+    return { ...p, weeklyHours: hours, weeklyWishes: pm.noWishes ? [] : p.weeklyWishes, minStart: ms.noMorning || pm.noMorning ? morningUntil : -1, month: pm };
+  });
   const pIndex = new Map(people.map((p, i) => [p.id, i]));
 
   const days = daysOfMonth(key).map((date, d) => {
@@ -116,19 +124,24 @@ export function buildProblem(state, key, opts = {}) {
     return a;
   });
 
-  const av = [], appts = [], cand = [], forced = [], fixed = [], initial = [];
+  const av = [], appts = [], cand = [], forced = [], fixed = [], initial = [], lens = [], must = [], edge = [];
   const workdays = 7 - cfg.weekendDays.length || 5;
   const target = [];
   const weekWork = [];
   people.forEach((person, p) => {
-    av.push([]); appts.push([]); cand.push([]); forced.push([]); fixed.push([]); initial.push([]);
+    av.push([]); appts.push([]); cand.push([]); forced.push([]); fixed.push([]); initial.push([]); lens.push([]); must.push([]);
+    // edge[p][d]: the day directly before or after an absence (vacation); a duty there shortens the time off
+    edge.push(days.map((day) => !isAbsent(person, day.date) && (isAbsent(person, addDays(day.date, -1)) || isAbsent(person, addDays(day.date, 1)))));
     days.forEach((day) => {
       const avs = effectiveDay(state, person, day.date);
       const ap = day.closed || isAbsent(person, day.date) ? [] : appointmentsFor(cfg, person, day.date);
-      let list = person.active && !day.closed ? candidatesFor(cfg, person, day, avs, ap) : [];
+      let list = person.active && !day.closed ? candidatesFor(cfg, person, day, avs, ap, person.minStart) : [];
       let fix = false;
       let ch = -1;
       const existing = plan.duties?.[dutyKey(person.id, day.date)];
+      // what a free generation could do on this day (for the lower bounds in report.js)
+      if (existing?.locked) { const e = parseDuty(existing); lens[p].push([e.len]); must[p].push(true); }
+      else { lens[p].push([...new Set(list.map((c) => c.len))]); must[p].push(ap.length > 0 && list.length > 0); }
       if (existing && (keep === 'all' || existing.locked)) { list = [parseDuty(existing)]; fix = true; ch = 0; }
       else if (keep === 'all') fix = true;
       else if (ap.length && list.length) ch = 0;
@@ -163,7 +176,7 @@ export function buildProblem(state, key, opts = {}) {
   const pairs = [];
   people.forEach((a, p) => people.forEach((b, q) => { if (p < q && a.active && b.active) pairs.push([p, q]); }));
 
-  return { key, cfg, W: cfg.weights, people, pIndex, days, weekKeys, weekDays, weekends, weekWork, need, av, appts, cand, forced, fixed, initial, target, hist, prevEnd, pairs };
+  return { key, cfg, W: cfg.weights, ms, people, pIndex, days, weekKeys, weekDays, weekends, weekWork, need, av, appts, cand, forced, fixed, initial, lens, must, edge, target, hist, prevEnd, pairs };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -237,7 +250,7 @@ export function makeEval(P, choice) {
     const person = people[p];
     let hard = 0;
     let cost = 0;
-    const info = detail ? { rather: [], wishMiss: [], late: [], weeks: [], weekend: 0, apptOnly: 0, consecutive: 0, wantMissed: 0, balance: 0, worked: 0, prefMiss: 0 } : null;
+    const info = detail ? { vacation: [], rather: [], wishMiss: [], late: [], weeks: [], weekend: 0, apptOnly: 0, consecutive: 0, wantMissed: 0, balance: 0, worked: 0, prefMiss: 0 } : null;
     let prev = P.prevEnd[p] >= 0 ? { to: P.prevEnd[p] } : null;
     const worked = new Float64Array(P.weekKeys.length);
     const starts = P.weekKeys.map(() => []);
@@ -270,6 +283,7 @@ export function makeEval(P, choice) {
           }
         }
         if (du.apptOnly) apptOnly++;
+        if (P.edge[p][d] && W.vacation) { cost += W.vacation; if (detail) info.vacation.push(d); }
         if (!day.weekend && person.preferredWeekdays.length && !person.preferredWeekdays.includes(day.wd) && !P.appts[p][d].length) {
           cost += W.prefDay;
           if (detail) info.prefMiss++;
@@ -327,6 +341,15 @@ export function makeEval(P, choice) {
       const f = balanceCounts().filter((_, p) => people[p].active);
       if (f.length) { const mean = f.reduce((a, b) => a + b, 0) / f.length; cost += W.balanceDay * f.reduce((a, x) => a + (x - mean) ** 2, 0); }
     }
+    if (W.lateBalance) {
+      const l = people.map((person, p) => {
+        if (!person.active) return null;
+        let n = 0;
+        for (let d = 0; d < days.length; d++) { const du = dutyOf(p, d); if (du && du.to > lateEnd) n++; }
+        return n;
+      }).filter((x) => x != null);
+      if (l.length > 1) { const mean = l.reduce((a, b) => a + b, 0) / l.length; cost += W.lateBalance * l.reduce((a, x) => a + (x - mean) ** 2, 0); }
+    }
     if (O.length > 1) {
       const mean = O.reduce((a, b) => a + b, 0) / O.length;
       cost += W.pairs * O.reduce((a, x) => a + ((x - mean) / 60) ** 2, 0);
@@ -344,7 +367,9 @@ export function createOptimizer(P, opts = {}) {
   const budgetMs = opts.budgetMs ?? 3000;
   const nP = P.people.length;
   const nD = P.days.length;
-  const choice = P.initial.map((row) => row.slice());
+  // opts.start: choice matrix to continue from (restart of the search from the best plan so far)
+  const choice = (opts.start || P.initial).map((row) => row.slice());
+  const T0 = opts.T0 ?? 60;
   const E = makeEval(P, choice);
 
   const dc = new Float64Array(nD);
@@ -485,7 +510,7 @@ export function createOptimizer(P, opts = {}) {
       const t0 = Date.now();
       while (Date.now() - t0 < ms && spent + (Date.now() - t0) < budgetMs) {
         const frac = Math.min(1, (spent + (Date.now() - t0)) / budgetMs);
-        const T = 60 * Math.pow(0.5 / 60, frac);
+        const T = T0 * Math.pow(0.5 / T0, frac);
         for (let k = 0; k < 100; k++) iterate(T);
       }
       spent += Date.now() - t0;
@@ -570,6 +595,9 @@ export function analyze(P, choice) {
         if (!ap.length && (!win.on || du.from < minutesOf(win.from) || du.to > minutesOf(win.to))) {
           dutyIssues[p][d].push({ level: 'warn', text: `Außerhalb der Dienstzeiten des Tages (${win.on ? win.from + '–' + win.to : 'kein Diensttag'})` });
         }
+        if (!ap.length && person.minStart >= 0 && du.from < person.minStart) {
+          dutyIssues[p][d].push({ level: 'warn', text: `Monatseinstellung: in diesem Monat keine Dienste vor ${fmtMin(person.minStart)}` });
+        }
         if (!person.active) dutyIssues[p][d].push({ level: 'warn', text: 'Person ist archiviert' });
       }
       for (const a of ap) {
@@ -584,6 +612,10 @@ export function analyze(P, choice) {
         }
       }
     });
+    for (const d of r.info.vacation) {
+      dutyIssues[p][d].push({ level: 'warn', text: 'Direkt vor oder nach einer Abwesenheit (Urlaub)' });
+      messages.push({ level: 'warn', d, text: `${person.name}, ${formatDay(days[d].date)}: Dienst direkt vor oder nach Abwesenheit` });
+    }
     for (const d of r.info.rather) {
       dutyIssues[p][d].push({ level: 'warn', text: 'Liegt (teilweise) in einer „eher nicht“-Zeit' });
       messages.push({ level: 'warn', d, text: `${person.name}, ${formatDay(days[d].date)}: Dienst in „eher nicht“-Zeit` });

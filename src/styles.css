@@ -302,3 +302,10 @@ table.report tr.st-warn td.mark { color: var(--bad); }
 @media print {
   .lane .bar.bad, .need .gap, table.cal td.cell.bad { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Month settings and rule check above the plan (collapsible) */
+details.card { border: 1px solid var(--line, #d0d0d0); padding: .5rem .8rem; }
+details.card > summary { cursor: pointer; font-weight: 600; }
+details.card[open] > summary { margin-bottom: .5rem; }
+details.card table.grid { margin: .4rem 0 .6rem; }
+details.card h3 { margin: .8rem 0 .2rem; font-size: .95rem; }

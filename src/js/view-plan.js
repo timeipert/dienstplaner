@@ -2,13 +2,18 @@
 // hours per week, balance figures, warnings, print and export.
 import { h, openModal, toast, downloadFile, monthNav, confirmModal } from './ui-core.js';
 import { store, save } from './store.js';
-import { getPlan, dutyKey, STATUS, STEP, visibleRange } from './model.js';
-import { buildProblem, createOptimizer, analyze, storedChoice } from './scheduler.js';
+import { getPlan, dutyKey, STATUS, STEP, visibleRange, WEIGHT_DEFS, monthSettingsOf, personMonthOf, editMonthSettings } from './model.js';
+import { buildProblem, analyze, storedChoice } from './scheduler.js';
+import { buildReport, weightFor } from './report.js';
+import { createSearch, openConstraints } from './search.js';
 import { planToCsv, planToIcs } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT, MONTHS } from './util.js';
 
 const undoStack = []; // { key, json }
-const genOptions = { keepAll: false, budget: 3000 };
+// time: 0 = one run of about 3 s; otherwise the search repeats until all rules are met or the limit (ms) is reached
+const genOptions = { keepAll: false, time: 20000 };
+let lastRun = null; // { key, runs, spent, reason, open } of the last generation in this browser tab
+const TIME_OPTIONS = [[0, 'schnell (ein Durchlauf)'], [20000, 'bis alle Regeln erfüllt, höchstens 20 s'], [60000, 'bis alle Regeln erfüllt, höchstens 1 min'], [180000, 'bis alle Regeln erfüllt, höchstens 3 min']];
 
 function pushUndo(key) {
   undoStack.push({ key, json: JSON.stringify(store.state.plans[key]?.duties || {}) });
@@ -93,8 +98,8 @@ export function renderPlanView() {
       h('div', { class: 'row' },
         h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Plan erstellen'),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: genOptions.keepAll, onChange: (e) => { genOptions.keepAll = e.target.checked; } }), 'Bestehende Dienste behalten'),
-        h('select', { 'aria-label': 'Rechenzeit', onChange: (e) => { genOptions.budget = Number(e.target.value); } },
-          [[1500, 'schnell'], [3000, 'normal'], [8000, 'gründlich']].map(([v, l]) => h('option', { value: v, selected: v === genOptions.budget }, l))),
+        h('select', { 'aria-label': 'Rechenzeit', onChange: (e) => { genOptions.time = Number(e.target.value); } },
+          TIME_OPTIONS.map(([v, l]) => h('option', { value: v, selected: v === genOptions.time }, l))),
         h('button', { class: 'btn', onClick: () => undo(key), disabled: !undoStack.some((u) => u.key === key) }, 'Rückgängig'),
         h('button', { class: 'btn', onClick: () => clearPlan(key) }, 'Leeren'),
         h('button', { class: 'btn', onClick: () => window.print() }, 'Drucken'),
@@ -104,6 +109,8 @@ export function renderPlanView() {
       h('span', { class: 'sep' }, `Abgabe bis ${deadline}`),
       h('span', { class: `sep ${A.messages.some((m) => m.level === 'bad') ? 'badtext' : ''}` }, A.messages.filter((m) => m.level === 'bad').length ? `${A.messages.filter((m) => m.level === 'bad').length} Probleme` : 'keine Regelverstöße'),
       people.some((p) => p.active) ? null : h('span', { class: 'sep' }, 'Noch keine Personen angelegt.')),
+    renderMonthSettings(s, key),
+    renderRuleCheck(s, P, key),
     h('p', { class: 'print-title' }, `${cfg.title} – ${formatMonth(key)}${plan.status !== 'final' ? ' (Entwurf)' : ''}`),
     s.ui.planView === 'calendar' ? renderCalendar(P, A, plan) : [
       h('div', { class: 'legend noprint' },
@@ -315,21 +322,95 @@ async function runGeneration() {
     }));
   }
   const bar = h('i', { style: 'width:0%' });
-  const close = openModal('Plan wird berechnet …', () => h('div', {}, h('p', {}, 'Die Berechnung läuft lokal in diesem Browser.'), h('span', { class: 'meter' }, bar)));
+  const info = h('p', { class: 'hint' }, 'Erster Durchlauf …');
+  const search = createSearch(P, { timeoutMs: genOptions.time || 3000, runMs: genOptions.time >= 60000 ? 6000 : 3000, untilMet: genOptions.time > 0, seed: Date.now() % 100000 });
+  const close = openModal('Plan wird berechnet …', () => h('div', {},
+    h('p', {}, 'Die Berechnung läuft lokal in diesem Browser.'),
+    h('span', { class: 'meter' }, bar), info,
+    genOptions.time > 0 ? h('div', { class: 'row end' }, h('button', { class: 'btn', onClick: () => search.stop() }, 'Beenden und beste Lösung übernehmen')) : null));
   await new Promise((r) => setTimeout(r, 30));
-  const opt = createOptimizer(P, { budgetMs: genOptions.budget, seed: Date.now() % 100000 });
-  while (!opt.step(60)) {
-    bar.style.width = `${Math.round(opt.progress() * 100)}%`;
+  while (!search.step(80)) {
+    const st = search.state();
+    bar.style.width = `${Math.round(search.progress() * 100)}%`;
+    info.textContent = st.runs ? `${st.runs} Durchläufe · beste Lösung bisher: ${st.open === 0 ? 'alle Regeln erfüllt' : `${st.open} Regel(n) nicht ganz erfüllt`} · ${Math.round(st.spent / 1000)} s` : 'Erster Durchlauf …';
     await new Promise((r) => setTimeout(r, 0));
   }
-  const res = opt.result();
+  const res = search.result();
   pushUndo(key);
   const plan = getPlan(s, key);
   const locked = Object.fromEntries(Object.entries(plan.duties).filter(([, v]) => v.locked));
   plan.duties = { ...res.duties, ...locked };
   if (plan.status === 'collecting') plan.status = 'draft';
+  lastRun = { key, runs: res.runs, spent: res.spent, reason: res.reason, open: res.open.length };
   save();
   close();
-  toast('Plan erstellt.');
+  toast(res.open.length ? `Plan erstellt. ${res.open.length} Regel(n) nicht ganz erfüllt – siehe „Regelprüfung“.` : 'Plan erstellt. Alle Regeln erfüllt.');
   store.render();
+}
+
+/** Settings for the shown month only: no morning duties (all or single persons), weekly wishes paused, other hours. */
+function renderMonthSettings(s, key) {
+  const ms = monthSettingsOf(s, key);
+  const people = s.people.filter((p) => p.active);
+  const changed = ms.noMorning || people.some((p) => { const pm = personMonthOf(ms, p.id); return pm.noMorning || pm.noWishes || pm.hours !== ''; });
+  const setGlobal = (f, v) => { editMonthSettings(s, key)[f] = v; save(); store.render(); };
+  const setPerson = (pid, f, v) => {
+    const m = editMonthSettings(s, key);
+    m.people[pid] = { ...personMonthOf(m, pid), [f]: v };
+    save();
+    store.render();
+  };
+  return h('details', { class: 'card monthset noprint', open: changed ? true : null },
+    h('summary', {}, `Einstellungen nur für ${formatMonth(key)}`, changed ? h('span', { class: 'hint' }, ' – aktiv') : null),
+    h('p', { class: 'hint' }, 'Gilt nur in diesem Monat und ändert die Personen nicht dauerhaft. Termine (z. B. ein Hilfeplangespräch am Vormittag) finden trotzdem statt.'),
+    h('div', { class: 'row wrap' },
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: ms.noMorning, onChange: (e) => setGlobal('noMorning', e.target.checked) }), 'Keine Vormittagsdienste für alle'),
+      h('label', {}, 'Vormittag = Beginn vor ', h('input', { type: 'time', step: '1800', value: ms.morningUntil, onChange: (e) => setGlobal('morningUntil', e.target.value || '12:00') }))),
+    people.length ? h('table', { class: 'grid' },
+      h('thead', {}, h('tr', {}, ['Person', 'Keine Vormittagsdienste', 'Wöchentliche Wünsche aussetzen', 'Wochenstunden in diesem Monat'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, people.map((p) => {
+        const pm = personMonthOf(ms, p.id);
+        return h('tr', {},
+          h('td', {}, p.name),
+          h('td', {}, h('input', { type: 'checkbox', 'aria-label': `${p.name}: keine Vormittagsdienste`, checked: pm.noMorning || ms.noMorning, disabled: ms.noMorning, onChange: (e) => setPerson(p.id, 'noMorning', e.target.checked) })),
+          h('td', {}, (p.weeklyWishes || []).length ? h('input', { type: 'checkbox', 'aria-label': `${p.name}: wöchentliche Wünsche aussetzen`, checked: pm.noWishes, onChange: (e) => setPerson(p.id, 'noWishes', e.target.checked) }) : h('span', { class: 'hint' }, 'keine')),
+          h('td', {}, h('input', { type: 'number', class: 'narrow', min: '0', max: '60', step: '0.5', placeholder: String(p.weeklyHours), value: pm.hours, 'aria-label': `${p.name}: Wochenstunden in diesem Monat`, onChange: (e) => setPerson(p.id, 'hours', e.target.value === '' ? '' : Number(e.target.value)) }),
+            h('span', { class: 'hint' }, ` sonst ${fmtHours(p.weeklyHours)}`)));
+      }))) : null);
+}
+
+/**
+ * Rule check of the stored plan: rules that are not fully met, with their weight for a new
+ * generation, and rules that no plan can meet completely (lower bounds).
+ */
+function renderRuleCheck(s, P0, key) {
+  if (!Object.keys(getPlan(s, key).duties).length) return null;
+  const report = buildReport(P0, storedChoice(P0));
+  const open = openConstraints(report);
+  const labels = Object.fromEntries(WEIGHT_DEFS.map(([k, l]) => [k, l]));
+  const w = s.config.weights;
+  const run = lastRun && lastRun.key === key ? lastRun : null;
+  const runText = run ? `Letzte Berechnung: ${run.runs} Durchläufe in ${Math.round(run.spent / 1000)} s, ${run.reason === 'met' ? 'beendet, weil alle Regeln erfüllt sind' : run.reason === 'timeout' ? 'beendet, weil die Zeit abgelaufen ist' : run.reason === 'stopped' ? 'von Hand beendet' : 'ein Durchlauf'}.` : '';
+  return h('details', { class: 'card rulecheck noprint', open: open.length ? true : null },
+    h('summary', {}, 'Regelprüfung: ', open.length ? h('span', { class: open.some((c) => c.status === 'bad') ? 'badtext' : '' }, `${open.length} Regel(n) nicht ganz erfüllt`) : 'alle Regeln erfüllt', ` (${report.summary.ok} von ${report.summary.total} erfüllt)`),
+    runText ? h('p', { class: 'hint' }, runText) : null,
+    open.length ? [
+      h('p', { class: 'hint' }, 'Nicht alle Regeln lassen sich immer gleichzeitig erfüllen. Höheres Gewicht = diese Regel wird beim nächsten Erstellen wichtiger genommen (andere geben dafür eher nach). Harte Regeln hängen an den Einträgen (Wünsche, Termine) und werden nie zugunsten anderer gebrochen.'),
+      h('table', { class: 'grid' },
+        h('thead', {}, h('tr', {}, ['Regel', 'Stand', 'Gewicht', ''].map((x) => h('th', {}, x)))),
+        h('tbody', {}, open.map((c) => {
+          const k = weightFor(c.id);
+          return h('tr', {},
+            h('td', {}, h('span', { class: c.status === 'bad' ? 'badtext' : '' }, c.label), c.detail ? h('div', { class: 'hint' }, c.detail) : null),
+            h('td', { class: 'nowrap' }, c.total != null ? `${c.met} / ${c.total}` : c.status === 'bad' ? 'deutlich ungleich' : 'etwas ungleich'),
+            h('td', { class: 'nowrap' }, k ? [
+              h('input', { type: 'number', class: 'narrow', min: '0', value: w[k], title: labels[k], 'aria-label': `Gewicht: ${labels[k]}`, onChange: (e) => { w[k] = Number(e.target.value) || 0; save(); } }),
+              h('button', { class: 'btn quiet', title: 'Gewicht verdoppeln', onClick: () => { w[k] = Math.max(1, w[k] * 2); save(); store.render(); } }, '×2')]
+              : h('span', { class: 'hint' }, c.group === 'hart' ? 'hart: Einträge prüfen' : '–')),
+            h('td', { class: 'hint' }, k ? labels[k] : ''));
+        }))),
+      h('div', { class: 'row' }, h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Mit diesen Gewichten neu erstellen'),
+        h('span', { class: 'hint' }, 'Alle Gewichte: Einrichtung → Gewichtung.'))] : null,
+    report.hints.length ? [h('h3', {}, 'Nicht vollständig erfüllbar'), h('p', { class: 'hint' }, 'Abweichungen, die kein Plan vermeiden kann (sie zählen in der Prüfung nicht als Verstoß), und Vorschläge für die Einstellungen.'),
+      h('ul', { class: 'notes' }, report.hints.map((t) => h('li', {}, t)))] : null);
 }

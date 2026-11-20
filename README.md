@@ -55,15 +55,29 @@ following month by default.
    (preferred), "can (exception)" (overrides the weekly pattern); weekly wishes such as "once a
    week a duty that starts in the morning"; absences (vacation).
 2. **Termine:** one-off appointments of the month (for example a case conference) with participants.
-3. **Plan:** "Plan erstellen", then adjust duties by clicking a lane (timeline) or a cell
+3. **Plan → "Einstellungen nur für <Monat>"** (month settings, stored in `monthSettings['YYYY-MM']`,
+   they change nothing outside that month): no morning duties for everybody or for single persons
+   (morning = start before a time, default 12:00; appointments still take place), weekly wishes
+   paused per person, other weekly hours per person.
+4. **Plan:** choose the computing time and press "Plan erstellen". "schnell" is one optimizer run
+   (about 3 s); "bis alle Regeln erfüllt, höchstens 20 s / 1 min / 3 min" repeats the search
+   (new random starts and restarts from the best plan) until every rule of the evaluation is met
+   or the time is up; "Beenden und beste Lösung übernehmen" stops early. The best plan is the one
+   with the lowest weighted cost.
+   Below the month settings, **"Regelprüfung"** (rule check) lists the rules the plan does not
+   fully meet, each with its weight: raise a weight (or press "×2") and press "Mit diesen
+   Gewichten neu erstellen" to favour that rule; other rules then give way. It also lists what no
+   plan can avoid (lower bounds, see `docs/generator.md`), for example duties on consecutive days
+   for 25 h/week with at most 6-hour duties; those do not count as violations.
+   Then adjust duties by clicking a lane (timeline) or a cell
    (calendar); "Fixieren" keeps a duty. Two views, switch "Zeitleiste | Kalender":
    - Zeitleiste: one row per day, one lane per person, bars over the hours.
    - Kalender: month grid like a calendar app, columns Mon–Sun, one row group per week with one
      row per person; cells show the duty times as numbers (for example `14–19`), a superscript
      letter marks an appointment, the last column shows worked / target hours of the week.
    Status "Wünsche sammeln → Entwurf → Abgeschlossen".
-4. **Auswertung:** shows how well the plan meets every rule and how fair it is (see below).
-5. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
+5. **Auswertung:** shows how well the plan meets every rule and how fair it is (see below).
+6. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
 
 ## Evaluation tab ("Auswertung")
 
@@ -120,6 +134,9 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | "Rather not on Friday until 21:00" | Wishes → brush "Eher nicht" in the weekly pattern |
 | Morning or afternoon duties start / end at the same time | Setup → simultaneous start or end |
 | After a duty until 21:00 no start before 13:00 next day | Setup → late rule |
+| No morning duties in a given month (for everybody or one person) | Plan → month settings |
+| No duty on the day before and the day after a vacation, so the time off is as long as possible | Wishes → absences; weight "day before or after an absence" (soft) |
+| Rules that cannot all be met at once: search longer, then weight them | Plan → computing time "bis alle Regeln erfüllt"; Regelprüfung → weights |
 
 ## Code map
 
@@ -127,12 +144,14 @@ Code: `src/js/report.js` (calculation, tested in `tests/report.test.mjs`), `src/
 | --- | --- |
 | `src/js/model.js` | State shape (schema 2), defaults, presets. |
 | `src/js/scheduler.js` | Candidate duties, cost function, optimizer, analysis. Authoritative for rule semantics. |
-| `src/js/report.js` | Evaluation of a plan: rule report, fairness figures, pairs. |
+| `src/js/report.js` | Evaluation of a plan: rule report, lower bounds (`structuralBounds`), fairness figures, pairs, weight of each rule (`weightFor`). |
+| `src/js/search.js` | Repeated optimizer runs with a time limit, early stop when every rule is met. |
 | `src/js/exporters.js` | CSV and iCalendar text. |
 | `src/js/store.js` | localStorage persistence. |
 | `src/js/view-*.js`, `app.js`, `ui-core.js` | UI (plan timeline, wishes grid, appointments, people, setup, data). |
 | `build.mjs` | Concatenates the modules into `dist/dienstplaner.html`; fails on duplicate top-level names. |
 | `tests/scheduler.test.mjs` | Scenario tests (the first team's rules). |
+| `tests/month-search.test.mjs` | Month settings, vacation edges, lower bounds, time-limited search. |
 | `docs/generator.md` | How the generator works. |
 
 ## Open questions (state 2026-11-20)

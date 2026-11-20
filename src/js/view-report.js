@@ -93,6 +93,7 @@ export function renderReportView() {
     h('h2', {}, 'Regeln und wie gut der Plan sie erfüllt'),
     h('p', { class: 'hint' }, '● erfüllt  ◐ teilweise (mindestens 90 %)  ○ verletzt oder deutlich verfehlt  – kommt in diesem Monat nicht vor. „Immer einzuhalten“ darf nie verletzt sein.'),
     h('div', { class: 'tablewrap' }, table),
+    rep.hints.length ? [h('h3', {}, 'Nicht vollständig erfüllbar'), h('ul', { class: 'notes' }, rep.hints.map((t) => h('li', {}, t)))] : null,
     h('h2', {}, 'Verteilung je Person'),
     h('p', { class: 'hint' }, 'Fett unterstrichen: höchster Wert, kursiv: niedrigster Wert der Spalte (nur wenn die Werte sich unterscheiden). Ausgeglichen heißt: kleine Spannweite.'),
     fairness,

@@ -39,13 +39,15 @@ export const WEIGHT_DEFS = [
   ['align', 'Dienste am selben Tag beginnen/enden nicht gleichzeitig (siehe Einrichtung)', 'je halbe Stunde Abstand'],
   ['rather', 'Dienst in „eher nicht“-Zeit', 'je halbe Stunde'],
   ['weeklyWish', 'Wöchentlicher Wunsch (z. B. einmal vormittags) nicht erfüllt', 'je fehlendem Dienst'],
+  ['vacation', 'Dienst am Tag vor oder nach einer Abwesenheit (Urlaub)', 'je Dienst'],
   ['emptyWeekend', 'Zu viele Wochenenden ganz ohne Dienst', 'je Wochenende über der Grenze'],
   ['balanceDay', 'Ungleich verteilte Ausgleichstage (z. B. Freitage)', 'Faktor'],
   ['pairs', 'Ungleich verteilte gemeinsame Zeit', 'Faktor'],
+  ['lateBalance', 'Ungleich verteilte späte Dienste (Ende nach der Grenze der Spätregel)', 'Faktor'],
 ];
 
 export function defaultWeights() {
-  return { coverage: 200, weeklyCoverage: 300, hours: 20, weekend: 400, weekendLate: 40, apptOnly: 300, length: 8, prefDay: 15, consecutive: 40, want: 25, emptyWeekend: 500, rather: 6, weeklyWish: 120, align: 10, outside: 3, balanceDay: 60, pairs: 3 };
+  return { coverage: 200, weeklyCoverage: 300, hours: 20, weekend: 400, weekendLate: 40, apptOnly: 300, length: 8, prefDay: 15, consecutive: 40, want: 25, emptyWeekend: 500, rather: 15, weeklyWish: 120, align: 10, outside: 3, balanceDay: 60, pairs: 3, vacation: 80, lateBalance: 5 };
 }
 
 export function defaultConfig() {
@@ -122,7 +124,7 @@ export const PRESETS = {
 export function newState(presetId = 'blank') {
   const preset = (PRESETS[presetId] || PRESETS.blank).build();
   return normalizeState({
-    version: SCHEMA_VERSION, config: preset.config, people: preset.people, availability: {}, plans: {},
+    version: SCHEMA_VERSION, config: preset.config, people: preset.people, availability: {}, plans: {}, monthSettings: {},
     ui: { month: shiftMonth(currentMonthKey(), 1), tab: 'plan', planView: 'timeline' }, meta: { onboarded: false },
   });
 }
@@ -158,6 +160,7 @@ export function normalizeState(s) {
   });
   s.availability = s.availability && typeof s.availability === 'object' ? s.availability : {};
   s.plans = s.plans && typeof s.plans === 'object' ? s.plans : {};
+  s.monthSettings = s.monthSettings && typeof s.monthSettings === 'object' ? s.monthSettings : {};
   for (const plan of Object.values(s.plans)) { plan.duties = plan.duties || {}; plan.status = plan.status || 'collecting'; }
   s.ui = { month: shiftMonth(currentMonthKey(), 1), tab: 'plan', planView: 'timeline', ...(s.ui || {}) };
   s.meta = { onboarded: false, ...(s.meta || {}) };
@@ -178,6 +181,31 @@ export function visibleRange(cfg, intervals) {
   let b = minutesOf(cfg.viewTo);
   for (const [f, t] of intervals) { if (f < a) a = f; if (t > b) b = t; }
   return [Math.floor(a / 60) * 60, Math.min(24 * 60, Math.ceil(b / 60) * 60)];
+}
+
+/**
+ * Settings that apply to one month only (key 'YYYY-MM'), for example "no morning duties in
+ * this month" for everybody or for one person, weekly wishes paused, or other weekly hours.
+ * Morning duty = duty that starts before morningUntil. Appointments (for example a case
+ * conference at 10:00) still take place; the duty of a participant may then start earlier.
+ */
+export function monthSettingsOf(state, key) {
+  const ms = state.monthSettings?.[key] || {};
+  return { noMorning: false, morningUntil: '12:00', ...ms, people: ms.people || {} };
+}
+
+/** Per-person part of the month settings. hours: '' = contract hours apply. */
+export function personMonthOf(ms, personId) {
+  return { noMorning: false, noWishes: false, hours: '', ...(ms.people[personId] || {}) };
+}
+
+/** Writable month settings (created on first change). */
+export function editMonthSettings(state, key) {
+  if (!state.monthSettings) state.monthSettings = {};
+  if (!state.monthSettings[key]) state.monthSettings[key] = { noMorning: false, morningUntil: '12:00', people: {} };
+  const ms = state.monthSettings[key];
+  if (!ms.people) ms.people = {};
+  return ms;
 }
 
 export const dutyKey = (personId, date) => `${personId}|${date}`;
