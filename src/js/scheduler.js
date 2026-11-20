@@ -314,6 +314,9 @@ export function makeEval(P, choice) {
     }
     if (person.active) cost += W.weekend * Math.abs(weekend - cfg.weekendDuty.perMonth);
     if (apptOnly > cfg.appointmentOnlyMax) cost += W.apptOnly * (apptOnly - cfg.appointmentOnlyMax);
+    // hard violations can exist in the start state (forced appointment duties); a very large
+    // cost makes the search remove them, and moves that add new ones are rejected in tryChange
+    cost += hard * 1e5;
     if (detail) { info.weekend = weekend; info.apptOnly = apptOnly; info.worked = worked.reduce((a, b) => a + b, 0) / 60; }
     return { hard, cost, info };
   };
@@ -502,22 +505,37 @@ export function createOptimizer(P, opts = {}) {
     } else t.revert();
   };
 
+  // opts.iters: fixed number of iterations instead of a time budget (deterministic, for tests)
+  const iters = opts.iters || 0;
   let spent = 0;
+  let count = 0;
   let done = cells.length === 0;
   return {
     step(ms) {
       if (done) return true;
       const t0 = Date.now();
+      if (iters) {
+        while (Date.now() - t0 < ms && count < iters) {
+          const T = T0 * Math.pow(0.5 / T0, count / iters);
+          for (let k = 0; k < 100; k++) iterate(T);
+          count += 100;
+        }
+        spent += Date.now() - t0;
+        if (count >= iters) done = true;
+        return done;
+      }
       while (Date.now() - t0 < ms && spent + (Date.now() - t0) < budgetMs) {
         const frac = Math.min(1, (spent + (Date.now() - t0)) / budgetMs);
         const T = T0 * Math.pow(0.5 / T0, frac);
         for (let k = 0; k < 100; k++) iterate(T);
+        count += 100;
       }
       spent += Date.now() - t0;
       if (spent >= budgetMs) done = true;
       return done;
     },
-    progress: () => (done ? 1 : Math.min(1, spent / budgetMs)),
+    iterations: () => count,
+    progress: () => (done ? 1 : iters ? count / iters : Math.min(1, spent / budgetMs)),
     result() {
       const duties = {};
       P.people.forEach((person, p) => P.days.forEach((day, d) => {
@@ -529,10 +547,13 @@ export function createOptimizer(P, opts = {}) {
   };
 }
 
-/** Synchronous wrapper (tests). */
+/**
+ * Synchronous wrapper (tests, command line). Runs a fixed number of iterations so results do not
+ * depend on machine speed: budgetMs × 100 iterations (about half the speed of a 2026 laptop).
+ */
 export function generate(state, key, opts = {}) {
   const P = buildProblem(state, key, { keep: opts.keep || 'locked' });
-  const opt = createOptimizer(P, opts);
+  const opt = createOptimizer(P, { ...opts, iters: opts.iters ?? Math.round((opts.budgetMs ?? 3000) * 100) });
   while (!opt.step(250)) { /* run until the budget is used */ }
   return { problem: P, ...opt.result() };
 }
