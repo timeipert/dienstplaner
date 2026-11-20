@@ -2,7 +2,7 @@
 // hours per week, balance figures, warnings, print and export.
 import { h, openModal, toast, downloadFile, monthNav, confirmModal } from './ui-core.js';
 import { store, save } from './store.js';
-import { getPlan, dutyKey, STATUS, STEP } from './model.js';
+import { getPlan, dutyKey, STATUS, STEP, visibleRange } from './model.js';
 import { buildProblem, createOptimizer, analyze, storedChoice } from './scheduler.js';
 import { planToCsv, planToIcs } from './exporters.js';
 import { formatMonth, formatDay, shiftMonth, minutesOf, fmtMin, fmtHours, WEEKDAYS_SHORT } from './util.js';
@@ -22,8 +22,9 @@ export function renderPlanView() {
   const plan = getPlan(s, key);
   const P = buildProblem(s, key, { keep: 'all' });
   const A = analyze(P, storedChoice(P));
-  const v0 = minutesOf(cfg.viewFrom);
-  const v1 = minutesOf(cfg.viewTo);
+  const intervals = Object.values(plan.duties).map((du) => [minutesOf(du.from), minutesOf(du.to)]);
+  P.appts.forEach((row) => row.forEach((list) => list.forEach((a) => intervals.push([a.from, a.to]))));
+  const [v0, v1] = visibleRange(cfg, intervals);
   const pct = (m) => `${((Math.min(Math.max(m, v0), v1) - v0) / (v1 - v0)) * 100}%`;
   const width = (a, b) => `${((Math.min(b, v1) - Math.max(a, v0)) / (v1 - v0)) * 100}%`;
   const hours = [];
@@ -77,7 +78,12 @@ export function renderPlanView() {
 
   return h('section', { class: 'view' },
     h('div', { class: 'toolbar' },
-      monthNav(formatMonth(key), () => changeMonth(-1), () => changeMonth(1)),
+      h('div', { class: 'row' },
+        monthNav(formatMonth(key), () => changeMonth(-1), () => changeMonth(1)),
+        h('div', { class: 'brushes noprint', role: 'radiogroup', 'aria-label': 'Ansicht' }, [['timeline', 'Zeitleiste'], ['calendar', 'Kalender']].map(([v, l]) => h('button', {
+          class: `btn ${(s.ui.planView || 'timeline') === v ? 'on' : ''}`, role: 'radio', 'aria-checked': String((s.ui.planView || 'timeline') === v),
+          onClick: () => { s.ui.planView = v; save(); store.render(); },
+        }, l)))),
       h('div', { class: 'row' },
         h('button', { class: 'btn solid', onClick: () => runGeneration() }, 'Plan erstellen'),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: genOptions.keepAll, onChange: (e) => { genOptions.keepAll = e.target.checked; } }), 'Bestehende Dienste behalten'),
@@ -93,17 +99,69 @@ export function renderPlanView() {
       h('span', { class: 'sep' }, A.messages.filter((m) => m.level === 'bad').length ? `${A.messages.filter((m) => m.level === 'bad').length} Probleme` : 'keine Regelverstöße'),
       people.some((p) => p.active) ? null : h('span', { class: 'sep' }, 'Noch keine Personen angelegt.')),
     h('p', { class: 'print-title' }, `${cfg.title} – ${formatMonth(key)}${plan.status !== 'final' ? ' (Entwurf)' : ''}`),
-    h('div', { class: 'legend noprint' },
-      h('span', {}, h('i', { class: 'lg-bar' }), 'Dienst'),
-      h('span', {}, h('i', { class: 'lg-req' }), 'benötigte Besetzung'),
-      h('span', {}, h('i', { class: 'lg-gap' }), 'Lücke'),
-      h('span', {}, h('i', { class: 'lg-appt' }), 'Termin'),
-      h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht')),
-    h('div', { class: 'timeline', style: `--hours:${(v1 - v0) / 60}` },
-      h('div', { class: 'tl-day head' }, h('div', { class: 'tl-date' }), h('div', { class: 'tl-body' }, scale), h('div', { class: 'tl-text' })),
-      P.days.map(dayRow)),
+    s.ui.planView === 'calendar' ? renderCalendar(P, A, plan) : [
+      h('div', { class: 'legend noprint' },
+        h('span', {}, h('i', { class: 'lg-bar' }), 'Dienst'),
+        h('span', {}, h('i', { class: 'lg-req' }), 'benötigte Besetzung'),
+        h('span', {}, h('i', { class: 'lg-gap' }), 'Lücke'),
+        h('span', {}, h('i', { class: 'lg-appt' }), 'Termin'),
+        h('span', {}, h('i', { class: 'lg-blocked' }), 'kann nicht')),
+      h('div', { class: 'timeline', style: `--hours:${(v1 - v0) / 60}` },
+        h('div', { class: 'tl-day head' }, h('div', { class: 'tl-date' }), h('div', { class: 'tl-body' }, scale), h('div', { class: 'tl-text' })),
+        P.days.map(dayRow))],
     renderStats(s, P, A, key),
     renderMessages(A));
+}
+
+/** "14:00" -> "14", "15:30" -> "15:30" */
+const shortTime = (t) => (t.endsWith(':00') ? String(Number(t.slice(0, 2))) : t.replace(/^0/, ''));
+
+/** Month calendar: weeks as row groups, Mon–Sun as columns, one row per person with duty times. */
+function renderCalendar(P, A, plan) {
+  const cfg = P.cfg;
+  const order = [0, 1, 2, 3, 4, 5, 6].map((i) => (cfg.weekStart + i) % 7);
+  const byDn = new Map(P.days.map((d) => [d.dn, d]));
+  const people = P.people.filter((person) => person.active || Object.keys(plan.duties).some((k) => k.startsWith(person.id + '|')));
+  const rows = [];
+  P.weekKeys.forEach((wk, w) => {
+    rows.push(h('tr', { class: 'cal-date' }, h('th', {}, ''), order.map((_, i) => {
+      const day = byDn.get(wk + i);
+      if (!day) return h('td', { class: 'out' });
+      const gaps = A.dayInfo[day.d].gaps;
+      return h('td', { class: `${day.weekend ? 'we' : ''}` },
+        h('span', { class: 'dnum' }, formatDay(day.date)),
+        day.closed ? h('small', {}, ' geschlossen') : null,
+        gaps.length ? h('div', { class: 'gaptext' }, gaps.map(([a, b]) => `${shortTime(fmtMin(a))}–${shortTime(fmtMin(b))} offen`).join(', ')) : null);
+    }), h('td', { class: 'wsum head' }, w === 0 ? 'Std. Woche' : '')));
+    people.forEach((person) => {
+      const p = P.pIndex.get(person.id);
+      const wkStat = A.stats[p].weeks[w];
+      rows.push(h('tr', { class: 'cal-person' }, h('th', {}, person.name), order.map((_, i) => {
+        const day = byDn.get(wk + i);
+        if (!day) return h('td', { class: 'out' });
+        if (day.closed) return h('td', { class: 'out' });
+        const du = plan.duties[dutyKey(person.id, day.date)];
+        const issues = A.dutyIssues[p][day.d];
+        const worst = issues.some((x) => x.level === 'bad') ? 'bad' : issues.length ? 'warn' : '';
+        const ap = P.appts[p][day.d];
+        return h('td', {
+          class: `cell ${day.weekend ? 'we' : ''} ${worst} ${du ? 'has' : ''} ${du?.locked ? 'locked' : ''}`,
+          title: [du ? `${person.name} ${du.from}–${du.to}` : `${person.name}: kein Dienst`, ...ap.map((a) => `Termin: ${a.title} ${fmtMin(a.from)}–${fmtMin(a.to)}`), ...issues.map((x) => x.text)].join('\n'),
+          onClick: () => openEditor(P, A, person, day, day.d),
+        }, du ? `${shortTime(du.from)}–${shortTime(du.to)}` : (worst ? '!' : ''), ap.length ? h('sup', {}, ap.map((a) => (a.title || 'T')[0]).join('')) : null);
+      }), h('td', { class: 'wsum' }, wkStat ? `${fmtHours(wkStat.worked)} / ${fmtHours(wkStat.target)}` : '')));
+    });
+  });
+  return [
+    h('div', { class: 'legend noprint' },
+      h('span', {}, h('b', {}, '14–19'), ' Dienst'),
+      h('span', {}, h('sup', {}, 'T'), ' Termin (Anfangsbuchstabe)'),
+      h('span', {}, h('i', { class: 'lg-badcell' }), 'Problem'),
+      h('span', {}, h('i', { class: 'lg-locked' }), 'fixiert')),
+    h('div', { class: 'tablewrap' }, h('table', { class: 'cal' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), order.map((wd) => h('th', {}, WEEKDAYS_SHORT[wd])), h('th', {}, ''))),
+      h('tbody', {}, rows))),
+  ];
 }
 
 function renderStats(s, P, A, key) {

@@ -45,7 +45,12 @@ following month by default.
 1. **Wünsche:** per person and half hour "cannot work" (hard), "wants to work" (preferred),
    "can (exception)" (overrides the weekly pattern); absences (vacation).
 2. **Termine:** one-off appointments of the month (for example a case conference) with participants.
-3. **Plan:** "Plan erstellen", then adjust duties by clicking a lane; "Fixieren" keeps a duty.
+3. **Plan:** "Plan erstellen", then adjust duties by clicking a lane (timeline) or a cell
+   (calendar); "Fixieren" keeps a duty. Two views, switch "Zeitleiste | Kalender":
+   - Zeitleiste: one row per day, one lane per person, bars over the hours.
+   - Kalender: month grid like a calendar app, columns Mon–Sun, one row group per week with one
+     row per person; cells show the duty times as numbers (for example `14–19`), a superscript
+     letter marks an appointment, the last column shows worked / target hours of the week.
    Status "Wünsche sammeln → Entwurf → Abgeschlossen".
 4. Print (A4 landscape, hours table on page 2), CSV, calendar file (.ics) per person.
 
@@ -61,6 +66,7 @@ following month by default.
 | Wish string | 48 characters per day, one per half hour: `.` none, `x` cannot, `+` wants, `o` can (exception). |
 | Balance weekdays | Weekdays (default Friday) whose duties are spread evenly across persons, including previous months. |
 | Late rule | After a duty ending after 20:30 the next day's duty starts at 13:00 at the earliest (configurable). |
+| Normal span | 10:00–21:00 (Setup → duty times per weekday and display range). Duties entered by hand and appointments may lie outside (for example from 07:30); the views widen automatically and mark such duties. The generator plans only inside the duty times of the weekday, except to include an appointment. |
 
 ## How the first team's requirements are represented (state 2026-11-20)
 

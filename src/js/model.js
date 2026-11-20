@@ -15,7 +15,7 @@
 // dayString: 48 characters, one per half hour of the day (index 0 = 00:00–00:30).
 //   '.' no entry   'x' cannot work (hard)   '+' wants to work   'o' can work (overrides the weekly pattern)
 
-import { uid, currentMonthKey, shiftMonth } from './util.js';
+import { uid, currentMonthKey, shiftMonth, minutesOf } from './util.js';
 
 export const SCHEMA_VERSION = 2;
 export const STEP = 30; // minutes per grid cell
@@ -49,11 +49,11 @@ export function defaultConfig() {
   return {
     title: 'Dienstplan',
     weekStart: 1,
-    viewFrom: '08:00', // visible range of the timeline and the wish grid
-    viewTo: '22:00',
+    viewFrom: '10:00', // normal visible range; the views extend it when duties or appointments lie outside
+    viewTo: '21:00',
     deadlineDay: 4, // wishes and plan for month M are due on this day of month M-1
     // when duties may take place, per weekday (0 = Sunday)
-    dayWindows: { 0: win(true, '10:00', '22:00'), 1: win(true, '08:00', '21:00'), 2: win(true, '08:00', '21:00'), 3: win(true, '08:00', '21:00'), 4: win(true, '08:00', '21:00'), 5: win(true, '08:00', '21:00'), 6: win(true, '10:00', '22:00') },
+    dayWindows: { 0: win(true, '10:00', '21:00'), 1: win(true, '10:00', '21:00'), 2: win(true, '10:00', '21:00'), 3: win(true, '10:00', '21:00'), 4: win(true, '10:00', '21:00'), 5: win(true, '10:00', '21:00'), 6: win(true, '10:00', '21:00') },
     coverage: [{ id: uid('cv'), weekdays: [1, 2, 3, 4, 5], from: '14:00', to: '20:00', min: 1 }],
     weeklyCoverage: [], // { id, weekdays, from, to, min, days }: on `days` days per week the window is covered
     weekendDays: [6, 0],
@@ -90,7 +90,6 @@ export const PRESETS = {
     build: () => {
       const c = defaultConfig();
       c.title = 'Dienstplan Team';
-      for (const wd of [1, 2, 4, 5]) c.dayWindows[wd].from = '10:00';
       c.dayWindows[3].from = '12:00'; // Wednesday: no morning duties
       c.weeklyCoverage = [{ id: uid('wc'), weekdays: [1, 2, 3, 4, 5], from: '20:00', to: '21:00', min: 1, days: 1 }];
       c.appointments = [{ id: uid('ap'), title: 'Teamsitzung', repeat: 'weekly', weekday: 2, date: '', from: '14:00', to: '15:30', participants: 'all' }];
@@ -116,7 +115,7 @@ export function newState(presetId = 'blank') {
   const preset = (PRESETS[presetId] || PRESETS.blank).build();
   return normalizeState({
     version: SCHEMA_VERSION, config: preset.config, people: preset.people, availability: {}, plans: {},
-    ui: { month: shiftMonth(currentMonthKey(), 1), tab: 'plan' }, meta: { onboarded: false },
+    ui: { month: shiftMonth(currentMonthKey(), 1), tab: 'plan', planView: 'timeline' }, meta: { onboarded: false },
   });
 }
 
@@ -150,7 +149,7 @@ export function normalizeState(s) {
   s.availability = s.availability && typeof s.availability === 'object' ? s.availability : {};
   s.plans = s.plans && typeof s.plans === 'object' ? s.plans : {};
   for (const plan of Object.values(s.plans)) { plan.duties = plan.duties || {}; plan.status = plan.status || 'collecting'; }
-  s.ui = { month: shiftMonth(currentMonthKey(), 1), tab: 'plan', ...(s.ui || {}) };
+  s.ui = { month: shiftMonth(currentMonthKey(), 1), tab: 'plan', planView: 'timeline', ...(s.ui || {}) };
   s.meta = { onboarded: false, ...(s.meta || {}) };
   return s;
 }
@@ -158,6 +157,17 @@ export function normalizeState(s) {
 export function getPlan(state, key) {
   if (!state.plans[key]) state.plans[key] = { duties: {}, status: 'collecting' };
   return state.plans[key];
+}
+
+/**
+ * Visible range in minutes: the configured range, widened to full hours so that every given
+ * interval [from, to] (duties, appointments) is visible, for example a duty from 07:30.
+ */
+export function visibleRange(cfg, intervals) {
+  let a = minutesOf(cfg.viewFrom);
+  let b = minutesOf(cfg.viewTo);
+  for (const [f, t] of intervals) { if (f < a) a = f; if (t > b) b = t; }
+  return [Math.floor(a / 60) * 60, Math.min(24 * 60, Math.ceil(b / 60) * 60)];
 }
 
 export const dutyKey = (personId, date) => `${personId}|${date}`;

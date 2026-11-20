@@ -3,7 +3,7 @@
 // Resolution (scheduler.effectiveDay): absence > entry for the date > weekly pattern.
 import { h, monthNav, labelled } from './ui-core.js';
 import { store, save } from './store.js';
-import { EMPTY_DAY, STEP } from './model.js';
+import { EMPTY_DAY, STEP, visibleRange } from './model.js';
 import { effectiveDay, appointmentsFor, isAbsent } from './scheduler.js';
 import { formatMonth, formatDay, shiftMonth, daysOfMonth, weekdayOf, minutesOf, WEEKDAYS_SHORT } from './util.js';
 
@@ -26,8 +26,11 @@ export function renderAvailView() {
   }
   if (!people.some((p) => p.id === wishUi.person)) wishUi.person = people[0].id;
   const person = people.find((p) => p.id === wishUi.person);
-  const v0 = Math.floor(minutesOf(cfg.viewFrom) / STEP);
-  const v1 = Math.ceil(minutesOf(cfg.viewTo) / STEP);
+  const dates0 = daysOfMonth(key);
+  const apIntervals = dates0.flatMap((d) => appointmentsFor(cfg, person, d).map((a) => [a.from, a.to]));
+  const [r0, r1] = visibleRange(cfg, apIntervals);
+  const v0 = r0 / STEP;
+  const v1 = r1 / STEP;
   const idx = [];
   for (let i = v0; i < v1; i++) idx.push(i);
   const dates = daysOfMonth(key);
